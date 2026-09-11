@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entropy Extractor — RAW 2-Photo (Dark Frame)</title>
+<style>
+  /* Palette e tipografia allineate al tool BIP39 di Ian Coleman (Bootstrap 3 "stock"),
+     identica a quella della Pipeline di Estrazione Entropica Multi-Finestra (audio/PCM). */
+  :root{
+    --bg:#ffffff; --panel:#ffffff; --border:#dddddd; --text:#333333; --muted:#737373;
+    --well-bg:#f5f5f5; --well-border:#e3e3e3;
+    --accent:#337ab7; --accent-hover:#286090;
+    --win:#3c763d; --win-bg:#dff0d8; --win-border:#d6e9c6;
+    --fail:#a94442; --fail-bg:#f2dede; --fail-border:#ebccd1;
+    --warn:#8a6d3b; --warn-bg:#fcf8e3; --warn-border:#faebcc;
+    --mono:Menlo,Monaco,Consolas,"Courier New",monospace;
+    --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.42857143; padding:24px; }
+  h1{ color:var(--text); font-weight:500; font-size:1.6rem; letter-spacing:normal; margin-bottom:4px; }
+  .subtitle{ color:var(--muted); font-size:0.85rem; margin-bottom:12px; }
+  .panel{ background:var(--panel); border:1px solid var(--border); border-radius:4px; padding:16px; margin-bottom:20px; }
+  .doc-panel{ background:var(--well-bg); border:1px solid var(--well-border); border-radius:4px; padding:14px; margin-bottom:20px; font-size:0.8rem; line-height:1.55; color:var(--text); }
+  .doc-panel strong{ color:var(--accent); }
+  .doc-panel .warn{ color:var(--warn); }
+  .doc-panel details{ margin-top:8px; }
+  .doc-panel summary{ cursor:pointer; color:var(--accent); font-size:0.82rem; }
+  .doc-panel summary:hover{ color:var(--accent-hover); text-decoration:underline; }
+  .doc-panel .changelog-item{ margin:6px 0 6px 12px; padding-left:8px; border-left:2px solid var(--border); }
+  .consent-zone{ background:var(--warn-bg); border:1px solid var(--warn-border); border-radius:4px; padding:12px 14px; margin-bottom:16px; }
+  .consent-zone label{ display:flex; align-items:center; gap:8px; font-size:0.88rem; color:var(--text); font-weight:600; margin:0; cursor:pointer; }
+  .controls-row{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:12px; }
+  label{ font-size:0.8rem; color:var(--muted); display:block; margin-bottom:4px; }
+  input[type="number"], input[type="file"], select{
+    background:#ffffff; border:1px solid #cccccc; color:var(--text);
+    padding:6px 10px; border-radius:4px; font-family:var(--sans); font-size:0.9rem;
+  }
+  input[type="number"]:focus, select:focus{ outline:none; border-color:#66afe9; box-shadow:inset 0 1px 1px rgba(0,0,0,.075),0 0 8px rgba(102,175,233,.6); }
+  input[type="checkbox"]{ width:16px; height:16px; accent-color:var(--accent); margin-right:6px; }
+  .check-row{ display:flex; align-items:center; gap:4px; font-size:0.85rem; color:var(--text); margin-top:4px; }
+  button{
+    background:var(--accent); border:1px solid var(--accent-hover); color:#ffffff;
+    padding:9px 16px; border-radius:4px; font-family:var(--sans); cursor:pointer;
+    font-size:0.9rem; letter-spacing:0.2px; transition:background 0.15s ease;
+  }
+  button:hover:not(:disabled){ background:var(--accent-hover); }
+  button:disabled{ background:#c8c8c8; border-color:#c8c8c8; color:#ffffff; opacity:0.65; cursor:not-allowed; }
+  progress{ width:100%; height:14px; accent-color:var(--accent); background:var(--well-bg); }
+  #phaseText{ font-size:0.82rem; color:var(--accent); margin-top:6px; min-height:1.1em; }
+  #detectInfo{ font-size:0.76rem; color:var(--muted); margin-top:6px; line-height:1.5; }
+  .cards{ display:grid; grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); gap:16px; }
+  .card{ background:var(--panel); border:1px solid var(--border); border-radius:4px; padding:14px; font-size:0.83rem; line-height:1.5; }
+  .card.winner{ border-color:var(--win); box-shadow:0 0 0 1px var(--win-border), 0 0 8px rgba(60,118,61,0.25); }
+  .card.failed{ border-color:var(--fail); }
+  .card h2{ font-size:1rem; font-weight:500; margin:0 0 8px 0; padding-bottom:6px; border-bottom:1px solid var(--border); color:var(--text); }
+  .card.winner h2{ color:var(--win); }
+  .card.failed h2{ color:var(--fail); }
+  .row{ display:flex; justify-content:space-between; margin:3px 0; gap:8px; }
+  .row .k{ color:var(--muted); }
+  .bitstring{
+    word-break:break-all; font-size:0.72rem; font-family:var(--mono); background:var(--well-bg); padding:6px;
+    border:1px solid var(--well-border); border-radius:4px; margin:6px 0; max-height:260px; overflow-y:auto;
+    overflow-x:hidden; color:var(--text);
+  }
+  .winner .bitstring{ color:var(--win); }
+  .balance{ font-size:0.75rem; color:var(--muted); margin-bottom:6px; }
+  .winner .balance{ color:var(--win); }
+  .test-row{ display:flex; justify-content:space-between; font-size:0.78rem; margin:2px 0; font-family:var(--mono); }
+  .pass{ color:var(--win); font-weight:bold; }
+  .fail{ color:var(--fail); font-weight:bold; }
+  .insufficient{ color:var(--muted); font-style:italic; }
+  .warn-text{ color:var(--warn); }
+  .dl-btn{ margin-top:8px; width:100%; font-size:0.78rem; padding:6px; background:#ffffff; color:var(--text); border:1px solid #cccccc; }
+  .dl-btn:hover:not(:disabled){ background:#e6e6e6; }
+  .foot-counters{ font-size:0.72rem; color:var(--muted); margin-top:8px; border-top:1px solid var(--border); padding-top:6px; }
+  .gate-fail{ color:var(--fail); font-weight:bold; margin:6px 0; padding:8px; background:var(--fail-bg); border:1px solid var(--fail-border); border-radius:4px; line-height:1.5; }
+  .not-eligible-tag{ font-size:0.7rem; color:var(--muted); font-style:italic; border:1px solid var(--muted); border-radius:3px; padding:1px 6px; margin-left:6px; }
+  .selected-tag{ font-size:0.7rem; color:#ffffff; background:var(--win); border-radius:3px; padding:1px 7px; margin-left:6px; font-style:normal; font-weight:bold; }
+  .cmp-row{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:0.78rem; font-family:var(--mono); padding:5px 6px; border-bottom:1px dotted var(--border); }
+  .cmp-row:last-child{ border-bottom:none; }
+  .cmp-row .cmp-label{ min-width:110px; font-weight:bold; }
+  .cmp-row.cmp-selected{ background:var(--win-bg); border-radius:4px; }
+  .cmp-row.cmp-failed{ color:var(--muted); }
+  .provenance{ font-size:0.72rem; margin:4px 0; padding:4px 6px; border-radius:4px; background:var(--well-bg); border:1px solid var(--well-border); }
+  .provenance .real{ color:var(--win); }
+  .provenance .synth{ color:var(--warn); }
+  .numeric-scheme{ font-size:0.72rem; background:var(--well-bg); border:1px solid var(--well-border); border-radius:4px; padding:8px; margin:8px 0; }
+  .numeric-scheme .ns-title{ color:var(--text); font-weight:bold; margin-bottom:6px; letter-spacing:0.02em; }
+  .numeric-scheme .ns-row{ display:flex; justify-content:space-between; gap:8px; padding:2px 0; border-bottom:1px dotted var(--border); }
+  .numeric-scheme .ns-row:last-child{ border-bottom:none; }
+  .numeric-scheme .ns-row span:first-child{ color:var(--muted); flex-shrink:1; }
+  .numeric-scheme .ns-row span:last-child{ text-align:right; }
+  .numeric-scheme .ns-sub{ color:var(--muted); font-style:italic; font-size:0.95em; }
+  .numeric-scheme .ns-highlight span:last-child{ color:var(--win); font-weight:bold; }
+  .digest-box{
+    word-break:break-all; font-size:0.72rem; font-family:var(--mono); background:var(--well-bg); padding:6px;
+    border-radius:4px; margin:6px 0; color:var(--win); border:1px dashed var(--win-border);
+  }
+  .digest-note{ font-size:0.7rem; color:var(--muted); font-style:italic; margin:4px 0 8px 0; }
+  .sha-btn{ margin-top:6px; width:100%; font-size:0.78rem; padding:6px; background:#5cb85c; border-color:#4cae4c; color:#ffffff; }
+  .sha-btn:hover:not(:disabled){ background:#449d44; }
+</style>
+</head>
+<body>
+
+<h1>Entropy Extractor — RAW 2-Photo (Dark Frame)</h1>
+<div class="subtitle">Versione unificata: motore di estrazione/audit portato 1:1 dalla Pipeline Multi-Finestra (Peres + Toeplitz + MCV/Collision con Clopper-Pearson 99% + 4/15 NIST SP 800-22), applicato alla differenza pixel-per-pixel fra due dark frame. Esecuzione locale, nessuna dipendenza esterna.</div>
+<p style="font-family:var(--mono);font-size:0.68rem;color:var(--muted);margin:-8px 0 12px;">build 2026-09-10 v2 — rimosso il linguaggio "finestra vincente/vincitrice": sostituito con "scelta come migliore" + pannello di confronto esplicito che mostra il punteggio di ciascuna finestra e il motivo dell'esclusione delle altre (vedi CHANGELOG punto 8).</p>
+
+<div class="doc-panel">
+  <strong>DOCUMENTAZIONE E ASSUNZIONI (obbligatorie)</strong><br>
+  • Scopo: cancellare per sottrazione il rumore a pattern fisso del sensore (pixel caldi, dark current) comune a due dark frame identici (stesse impostazioni, obiettivo tappato/otturatore chiuso), ed estrarre bit dal rumore casuale residuo (shot/read noise) per un uso successivo in altri strumenti.<br>
+  • <span class="warn">I due file devono provenire dalla stessa fotocamera, stesse impostazioni (esposizione, ISO, temperatura) e idealmente scatti ravvicinati.</span> Offset/lunghezza/ordine byte impostati qui sotto vengono applicati a entrambi i file (si assume stessa struttura).<br>
+  • Rilevamento automatico del blocco dati funzionante solo per contenitori basati su TIFF (DNG e molte CR2/NEF/ARW/ORF/PEF). Per CR3, RAF, alcuni RW2 il rilevamento può fallire: impostare offset/lunghezza manualmente.<br>
+  • Molti formati RAW comprimono internamente i dati del sensore (lossless-JPEG/Huffman): in tal caso i bit riflettono anche l'algoritmo di compressione, non solo il rumore fisico. Preferire, se possibile, RAW non compresso.<br>
+  • Assunzione conservativa sulla sorgente: i LSB dei campioni-differenza non a zero/non agli estremi sono trattati come aventi <strong>min-entropia sconosciuta</strong>, stimata empiricamente con due stimatori indipendenti (MCV + Collision) e sottoposta a gate obbligatori PRIMA dell'estrazione.<br>
+  • <strong>Nessuna creazione di entropia</strong> in modalità rigorosa (default): se l'estrattore produce meno bit del target richiesto, la finestra restituisce solo i bit realmente estratti.<br>
+  • Gate obbligatori: lunghezza post-Peres ≥ 1024 bit; H_min della sorgente (minimo fra MCV e Collision) ≥ 0.05 bit/bit oppure ≥ 256 bit assoluti; almeno un blocco Toeplitz completo (512 bit in ingresso).<br>
+  • <span class="warn">Il seed è pubblico</span> per costruzione (proprietà del Leftover Hash Lemma): non deve essere segreto. Se il file RAW è pubblico/riproducibile da terzi, l'entropia crittografica reale è vicina a ZERO indipendentemente da questi test — da qui la dichiarazione di unicità obbligatoria qui sotto.<br>
+  • File molto grandi (&gt;10 MB) non vengono caricati per intero: viene letta solo una porzione di 10 MB a partire dal 40% del file (vedi CHANGELOG punto 5); in tal caso l'auto-rilevamento TIFF viene saltato.
+  <details>
+    <summary>Changelog di adattamento (RAW dark-frame ← tool audio/PCM unificato)</summary>
+    <div class="changelog-item"><strong>1. Motore matematico riusato senza modifiche.</strong> SHA-256/HMAC/HKDF, Clopper-Pearson esatto, Peres Extractor completo, Toeplitz strong extractor a rapporto dinamico, stime MCV/Collision, suite NIST (Monobit/Block Frequency/Runs/Longest Run), controllo di correlazione incrociata fra finestre e autotest all'avvio sono portati identici dalla Pipeline Multi-Finestra, già verificati contro vettori RFC ufficiali e riferimenti indipendenti. Nessuna riverifica necessaria su questa parte.</div>
+    <div class="changelog-item"><strong>2. Sorgente sostituita: non più PCM decodificato, ma differenza dark1−dark2.</strong> Al posto dei campioni audio, la sorgente grezza è ora la differenza parola-per-parola (16 bit) fra due dark frame allineati, letta direttamente dal blocco dati RAW (rilevato via parser TIFF/IFD o offset manuale). Il pattern fisso comune ai due scatti si cancella per sottrazione; resta prevalentemente rumore casuale indipendente fra i due scatti.</div>
+    <div class="changelog-item"><strong>3. [Bug reale corretto] Filtro di esclusione tarato sul dominio SIGNED, non più UNSIGNED.</strong> Il filtro di saturazione ereditato dal tool PCM escludeva, fra gli altri, il valore letto in UNSIGNED 0xFFFF. Per un campione PCM questo è un estremo di clipping legittimo da escludere; per una DIFFERENZA con segno in complemento a due, 0xFFFF rappresenta invece <strong>diff = −1</strong>, un valore di rumore piccolo e del tutto comune — escluderlo introduceva un'asimmetria sistematica (ogni −1 scartato, ogni +1 mantenuto), sbilanciando artificialmente p0/p1 sui bit selezionati. Verificato riproducendo il caso (1000 campioni con diff=−1 venivano scartati come "saturi" al 100% con il filtro ereditato). Corretto: per questo tool si esclude SOLO diff=0 (cancellazione esatta, nessuna informazione) e i due estremi con segno ±32768/32767 (overflow/clip di conversione), non più l'estremo unsigned 0xFFFF. Vedi autotest dedicato "Filtro diff con segno" nel pannello sotto.</div>
+    <div class="changelog-item"><strong>4. Rimossa la selezione euristica "migliori bit per varianza locale + diversità zone".</strong> Nella versione precedente del tool RAW, i bit venivano scelti con una euristica basata su varianza locale e vincoli di copertura arbitrari (min 3, obiettivo 5 zone su 6), senza una giustificazione statistica formale del perché quella selezione preservi (o migliori) l'indipendenza dei bit. Sostituita dall'approccio del tool unificato: l'intero campione della finestra passa per Peres + Toeplitz, con il rapporto di estrazione dimensionato dinamicamente sulla min-entropia realmente misurata (bound del Leftover Hash Lemma) — nessuna selezione arbitraria di sottoinsiemi.</div>
+    <div class="changelog-item"><strong>5. Rimossi i metodi DIFF/PARITY come canali aggiuntivi concatenati.</strong> La versione precedente concatenava LSB + segno-della-differenza-fra-campioni-consecutivi + parità dello stesso campione, senza stabilire l'indipendenza statistica fra questi tre bit derivati dallo stesso dato. Qui resta un solo canale per campione (LSB della differenza dark1−dark2), evitando ridondanza/correlazione non misurata fra "metodi" diversi applicati alla stessa sorgente.</div>
+    <div class="changelog-item"><strong>6. Finestre spaziali invece di barcode di posizione.</strong> Sostituita la visualizzazione "barcode" di distribuzione dei bit selezionati con la stessa struttura a finestre indipendenti del tool unificato (Inizio / Centro / Fine del blocco dati + Blocco intero, quest'ultimo escluso dalla vittoria perché non indipendente), incluso il controllo di correlazione incrociata multi-lag fra le tre finestre spaziali prima del debiasing.</div>
+    <div class="changelog-item"><strong>7. Mantenuti dal tool RAW originale.</strong> Dichiarazione obbligatoria di unicità/autoproduzione del file (gate bloccante sugli input), parser TIFF/IFD per il rilevamento automatico del blocco dati (StripOffsets/TileOffsets, incluse SubIFD), campi manuali di offset/lunghezza/ordine byte, e limite di memoria con lettura a porzione (File.slice) per file oltre 10 MB.</div>
+    <div class="changelog-item"><strong>8. [v2] Rinominato il tool e rimosso il linguaggio "finestra vincente/vincitrice".</strong> Il file è ora "entropy-extractor-raw-2photo.html". La finestra con il punteggio più alto è ora indicata come "scelta come migliore", con un badge neutro invece della stella. Aggiunto un pannello dedicato ("Confronto fra le finestre e criterio di scelta") che mostra, per ciascuna finestra, lo stato (ammessa / gate fallito / esclusa per correlazione), i test NIST superati, la min-entropia e il punteggio calcolato — così il motivo per cui una finestra è stata scelta e le altre no è visibile ed esplicito, non solo implicito in un'etichetta.</div>
+  </details>
+</div>
+
+<div class="consent-zone">
+  <label><input type="checkbox" id="confirmUnique"><span>Dichiaro che i due dark frame sono fotografie uniche e autoprodotte (non file pubblici/scaricati).</span></label>
+</div>
+
+<div class="panel">
+  <div class="controls-row">
+    <div>
+      <label>Dark frame 1 (RAW)</label>
+      <input type="file" id="rawFile1" accept=".dng,.cr2,.cr3,.nef,.nrw,.arw,.srf,.sr2,.orf,.raf,.rw2,.pef,.srw,.raw,.x3f,.iiq,.3fr,.dcr,.kdc,.mrw" disabled>
+    </div>
+    <div>
+      <label>Dark frame 2 (stesse impostazioni)</label>
+      <input type="file" id="rawFile2" accept=".dng,.cr2,.cr3,.nef,.nrw,.arw,.srf,.sr2,.orf,.raf,.rw2,.pef,.srw,.raw,.x3f,.iiq,.3fr,.dcr,.kdc,.mrw" disabled>
+    </div>
+    <div>
+      <label>Seed (intero, pubblico per costruzione — non deve essere segreto)</label>
+      <input type="number" id="seedInput" value="0">
+    </div>
+    <div>
+      <label>Bit di output desiderati per finestra</label>
+      <input type="number" id="targetBitsInput" value="512" step="8" min="128">
+    </div>
+    <div style="align-self:flex-end;">
+      <button id="startBtn" disabled>AVVIA ANALISI DARK FRAME</button>
+    </div>
+  </div>
+  <div class="controls-row">
+    <div>
+      <label>Offset blocco dati (byte)</label>
+      <input type="number" id="rawOffset" min="0" step="1" value="0" style="width:140px;">
+    </div>
+    <div>
+      <label>Lunghezza (byte, 0 = fino a fine file)</label>
+      <input type="number" id="rawLength" min="0" step="1" value="0" style="width:160px;">
+    </div>
+    <div>
+      <label>Ordine byte del RAW sorgente</label>
+      <select id="byteOrderSelect">
+        <option value="little">Little-endian (Intel, "II")</option>
+        <option value="big">Big-endian (Motorola, "MM")</option>
+      </select>
+    </div>
+  </div>
+  <div id="detectInfo">Carica il Dark frame 1 per tentare il rilevamento automatico del blocco dati.</div>
+  <div class="controls-row" style="margin-top:8px;">
+    <div class="check-row">
+      <input type="checkbox" id="skipFilterCheck">
+      <label for="skipFilterCheck" style="margin:0;color:var(--text);">Disabilita filtro diff=0/estremi (avanzato, sconsigliato)</label>
+    </div>
+    <div class="check-row">
+      <input type="checkbox" id="rigorousModeCheck" checked>
+      <label for="rigorousModeCheck" style="margin:0;color:var(--text);">Modalità rigorosa (nessuna espansione HKDF — solo bit realmente estratti)</label>
+    </div>
+  </div>
+  <progress id="progressBar" value="0" max="100"></progress>
+  <div id="phaseText">In attesa dei due dark frame...</div>
+</div>
+
+<div class="panel">
+  <div style="font-size:0.85rem;color:var(--accent);margin-bottom:8px;font-weight:bold;">Autotest all'avvio — verifica di regressione</div>
+  <div style="font-size:0.72rem;color:var(--muted);margin-bottom:8px;line-height:1.5;">
+    Eseguiti automaticamente ad ogni caricamento della pagina. Motore condiviso: SHA-256, HMAC-SHA256 (RFC 4231), HKDF (RFC 5869), Clopper-Pearson, conservazione della massa del Peres Extractor, coerenza del Toeplitz hashing contro un'implementazione indipendente. Specifici di questo tool: corretta esclusione dei soli campioni diff=0/±estremo con segno (senza escludere diff=±1), e corretta cancellazione di un pattern fisso sintetico per sottrazione. Se qualcosa qui fallisse: regressione nel codice, non usare i risultati della pipeline.
+  </div>
+  <div id="selfTestArea" style="font-size:0.72rem;">Esecuzione in corso…</div>
+</div>
+
+<div class="panel" id="comparisonPanel" style="display:none;">
+  <div style="font-size:0.85rem;color:var(--accent);margin-bottom:8px;font-weight:bold;">Confronto fra le finestre e criterio di scelta</div>
+  <div style="font-size:0.76rem;color:var(--muted);margin-bottom:10px;line-height:1.55;">
+    Fra le finestre <strong>indipendenti</strong> (non escluse per correlazione incrociata con un'altra) e <strong>senza gate falliti</strong>,
+    viene evidenziata quella con il punteggio più alto. Punteggio = (test NIST superati × 10) + min-entropia finale stimata (bit/bit) + (bit prodotti ÷ 1000).
+    In pratica conta prima di tutto quanti test statistici supera, poi quanto è alta l'entropia stimata, e infine quanti bit produce.
+    Le altre finestre non sono "peggiori" in assoluto: sono semplicemente quelle con il punteggio più basso fra le ammesse al confronto, oppure escluse a monte (gate fallito o correlazione rilevata con un'altra finestra).
+  </div>
+  <div id="comparisonTable"></div>
+</div>
+
+<div class="cards" id="cardsContainer"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ===================================================================
+  // STATO GLOBALE E COSTANTI DI SICUREZZA (identiche al tool unificato)
+  // ===================================================================
+  const MIN_POST_PERES_BITS = 1024;
+  const MIN_SOURCE_HMIN_RATE = 0.05;
+  const MIN_SOURCE_HMIN_ABS = 256;
+  const TOEPLITZ_IN = 512;
+  const LHL_EPSILON_BITS = 40;
+  const LHL_SECURITY_MARGIN = 2 * LHL_EPSILON_BITS;
+  const PRACTICAL_SAFETY_FACTOR = 0.85;
+  const MAX_EXTRACTION_RATIO = 0.90;
+
+  const MAX_MANAGED_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+  const MANAGED_SLICE_START_FRACTION = 0.4;        // 40% del file
+
+  const confirmUniqueEl = document.getElementById('confirmUnique');
+  const rawFile1El = document.getElementById('rawFile1');
+  const rawFile2El = document.getElementById('rawFile2');
+  const seedInput = document.getElementById('seedInput');
+  const targetBitsInput = document.getElementById('targetBitsInput');
+  const rawOffsetEl = document.getElementById('rawOffset');
+  const rawLengthEl = document.getElementById('rawLength');
+  const byteOrderSelect = document.getElementById('byteOrderSelect');
+  const detectInfo = document.getElementById('detectInfo');
+  const skipFilterCheck = document.getElementById('skipFilterCheck');
+  const rigorousModeCheck = document.getElementById('rigorousModeCheck');
+  const startBtn = document.getElementById('startBtn');
+  const progressBar = document.getElementById('progressBar');
+  const phaseText = document.getElementById('phaseText');
+  const cardsContainer = document.getElementById('cardsContainer');
+
+  function sleep(ms){ return new Promise(res => setTimeout(res, ms)); }
+
+  // Seed di default casuale (non un valore statico noto).
+  (function initRandomSeedDefault(){
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function'){
+      const buf = window.crypto.getRandomValues(new Uint32Array(1));
+      seedInput.value = String(buf[0]);
+    }
+  })();
+
+  // ===================================================================
+  // GATING SULLA DICHIARAZIONE DI UNICITÀ/AUTOPRODUZIONE (mantenuto dal
+  // tool RAW originale): sblocca gli input file solo dopo conferma.
+  // ===================================================================
+  function updateStartEnabled(){
+    startBtn.disabled = !(confirmUniqueEl.checked && rawFile1El.files[0] && rawFile2El.files[0]);
+  }
+  confirmUniqueEl.addEventListener('change', () => {
+    rawFile1El.disabled = !confirmUniqueEl.checked;
+    rawFile2El.disabled = !confirmUniqueEl.checked;
+    if (!confirmUniqueEl.checked){
+      rawFile1El.value = ""; rawFile2El.value = "";
+      detectInfo.textContent = "Carica il Dark frame 1 per tentare il rilevamento automatico del blocco dati.";
+    }
+    updateStartEnabled();
+  });
+  rawFile2El.addEventListener('change', updateStartEnabled);
+
+  // ===================================================================
+  // LIMITE DI MEMORIA PER FILE DI INPUT (mantenuto dal tool RAW
+  // originale): file oltre 10 MB vengono letti solo per una porzione di
+  // 10 MB a partire dal 40% del file, tramite File.slice() (lazy).
+  // ===================================================================
+  async function readManagedFileBuffer(file){
+    if (file.size <= MAX_MANAGED_FILE_BYTES){
+      const buffer = await file.arrayBuffer();
+      return { buffer, truncated:false, originalSize:file.size, sliceStart:0, sliceLength:buffer.byteLength };
+    }
+    let start = Math.floor(file.size * MANAGED_SLICE_START_FRACTION);
+    const len = MAX_MANAGED_FILE_BYTES;
+    if (start + len > file.size) start = Math.max(0, file.size - len);
+    const blobSlice = file.slice(start, start + len);
+    const buffer = await blobSlice.arrayBuffer();
+    return { buffer, truncated:true, originalSize:file.size, sliceStart:start, sliceLength:buffer.byteLength };
+  }
+  function formatBytes(bytes){
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + " kB";
+    return (bytes/(1024*1024)).toFixed(1) + " MB";
+  }
+  function formatManagedSliceNote(managed, label){
+    return "⚠ " + label + " di " + formatBytes(managed.originalSize) + " supera la soglia di " +
+      formatBytes(MAX_MANAGED_FILE_BYTES) + ": usata solo una porzione centrale di " +
+      formatBytes(managed.sliceLength) + " a partire dal 40% del file (byte " +
+      managed.sliceStart.toLocaleString() + "–" + (managed.sliceStart + managed.sliceLength).toLocaleString() +
+      " su " + managed.originalSize.toLocaleString() + " totali). Auto-rilevamento TIFF NON eseguito su questo file.";
+  }
+
+  // ===================================================================
+  // RILEVAMENTO BLOCCO DATI RAW (euristico, best-effort, invariato dal
+  // tool RAW originale). Funziona per contenitori TIFF (DNG e molte
+  // CR2/NEF/ARW/ORF/PEF): analizza la catena di IFD/SubIFD cercando
+  // StripOffsets/StripByteCounts o TileOffsets/TileByteCounts, sceglie
+  // euristicamente il blocco più grande.
+  // ===================================================================
+  function detectRawDataBlock(buf){
+    if (buf.byteLength < 16) return null;
+    const dv = new DataView(buf);
+    const b0 = dv.getUint8(0), b1 = dv.getUint8(1);
+    let littleEndian;
+    if (b0 === 0x49 && b1 === 0x49) littleEndian = true;
+    else if (b0 === 0x4D && b1 === 0x4D) littleEndian = false;
+    else return null;
+
+    let ifdOffset;
+    try { ifdOffset = dv.getUint32(4, littleEndian); } catch(e){ return null; }
+
+    const candidates = [];
+    const visited = new Set();
+    const typeSize = {1:1,2:1,3:2,4:4,5:8,6:1,7:1,8:2,9:4,10:8,11:4,12:8};
+
+    function readValues(entryPos, type, count){
+      const size = typeSize[type] || 1;
+      const totalSize = size * count;
+      let base;
+      if (totalSize <= 4) base = entryPos + 8;
+      else base = dv.getUint32(entryPos + 8, littleEndian);
+      const vals = [];
+      for (let k = 0; k < count; k++){
+        const pos = base + k * size;
+        if (pos + size > buf.byteLength){ vals.push(0); continue; }
+        if (type === 3) vals.push(dv.getUint16(pos, littleEndian));
+        else if (type === 4) vals.push(dv.getUint32(pos, littleEndian));
+        else vals.push(dv.getUint8(pos));
+      }
+      return vals;
+    }
+
+    function readIFD(offset){
+      if (!offset || offset < 2 || offset + 2 > buf.byteLength || visited.has(offset)) return;
+      visited.add(offset);
+      let numEntries;
+      try { numEntries = dv.getUint16(offset, littleEndian); } catch(e){ return; }
+
+      let stripOffsets=null, stripByteCounts=null, tileOffsets=null, tileByteCounts=null;
+      const subIFDs = [];
+      let entryPos = offset + 2;
+
+      for (let i = 0; i < numEntries; i++){
+        if (entryPos + 12 > buf.byteLength) break;
+        const tag = dv.getUint16(entryPos, littleEndian);
+        const type = dv.getUint16(entryPos + 2, littleEndian);
+        const count = dv.getUint32(entryPos + 4, littleEndian);
+        try {
+          if (tag === 273) stripOffsets = readValues(entryPos, type, count);
+          else if (tag === 279) stripByteCounts = readValues(entryPos, type, count);
+          else if (tag === 324) tileOffsets = readValues(entryPos, type, count);
+          else if (tag === 325) tileByteCounts = readValues(entryPos, type, count);
+          else if (tag === 330) subIFDs.push(...readValues(entryPos, type, count));
+        } catch(e){}
+        entryPos += 12;
+      }
+
+      if (stripOffsets && stripByteCounts && stripOffsets.length && stripByteCounts.length){
+        const total = stripByteCounts.reduce((a,b)=>a+b,0);
+        candidates.push({ offset: stripOffsets[0], length: total, kind:"strip" });
+      }
+      if (tileOffsets && tileByteCounts && tileOffsets.length && tileByteCounts.length){
+        const total = tileByteCounts.reduce((a,b)=>a+b,0);
+        candidates.push({ offset: tileOffsets[0], length: total, kind:"tile" });
+      }
+
+      const nextIFDPos = offset + 2 + numEntries * 12;
+      if (nextIFDPos + 4 <= buf.byteLength){
+        try { const nextOffset = dv.getUint32(nextIFDPos, littleEndian); if (nextOffset > 0) readIFD(nextOffset); } catch(e){}
+      }
+      for (const sub of subIFDs) readIFD(sub);
+    }
+
+    try { readIFD(ifdOffset); } catch(e){ return null; }
+
+    if (candidates.length === 0) return null;
+    candidates.sort((a,b) => b.length - a.length);
+    const best = candidates[0];
+    if (best.length < 1024 || best.offset + best.length > buf.byteLength) return null;
+
+    return { offset: best.offset, length: best.length, littleEndian, method: "TIFF IFD (" + best.kind + ", auto-rilevato)" };
+  }
+
+  rawFile1El.addEventListener('change', async () => {
+    const file = rawFile1El.files[0];
+    updateStartEnabled();
+    if (!file) return;
+    detectInfo.textContent = "Analisi struttura file in corso...";
+    const managed = await readManagedFileBuffer(file);
+    if (managed.truncated){
+      rawOffsetEl.value = 0;
+      rawLengthEl.value = managed.sliceLength;
+      detectInfo.textContent = formatManagedSliceNote(managed, "Dark frame 1");
+    } else {
+      const detected = detectRawDataBlock(managed.buffer);
+      if (detected){
+        rawOffsetEl.value = detected.offset;
+        rawLengthEl.value = detected.length;
+        byteOrderSelect.value = detected.littleEndian ? 'little' : 'big';
+        detectInfo.textContent = "Rilevato automaticamente: " + detected.method + " — offset " +
+          detected.offset.toLocaleString() + ", lunghezza " + detected.length.toLocaleString() + " byte (" +
+          formatBytes(detected.length) + "). Verrà applicato a entrambi i dark frame (stessa struttura assunta). " +
+          "Modificabile prima di avviare l'analisi.";
+      } else {
+        rawOffsetEl.value = 0; rawLengthEl.value = 0;
+        detectInfo.textContent = "Rilevamento automatico non riuscito (contenitore non TIFF o struttura non riconosciuta). " +
+          "Imposta manualmente offset/lunghezza.";
+      }
+    }
+  });
+
+  // ===================================================================
+  // FUNZIONI MATEMATICHE SPECIALI (NIST SP 800-22) — riusate identiche
+  // dal tool unificato, già verificate.
+  // ===================================================================
+  function erfc(x){
+    const z = Math.abs(x);
+    const t = 1 / (1 + 0.5 * z);
+    const ans = t * Math.exp(-z*z - 1.26551223 + t*(1.00002368 + t*(0.37409196 +
+      t*(0.09678418 + t*(-0.18628806 + t*(0.27886807 + t*(-1.13520398 +
+      t*(1.48851587 + t*(-0.82215223 + t*0.17087277)))))))));
+    return x >= 0 ? ans : (2 - ans);
+  }
+  function gammln(xx){
+    const cof = [76.18009172947146,-86.50532032941677,24.01409824083091,
+                 -1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];
+    let x = xx, y = xx;
+    let tmp = x + 5.5;
+    tmp -= (x + 0.5) * Math.log(tmp);
+    let ser = 1.000000000190015;
+    for (let j = 0; j < 6; j++){ y += 1; ser += cof[j] / y; }
+    return -tmp + Math.log(2.5066282746310005 * ser / x);
+  }
+  function gser(a, x){
+    const ITMAX=200, EPS=3e-9;
+    if (x <= 0) return 0;
+    let ap = a, sum = 1/a, del = sum;
+    for (let n = 1; n <= ITMAX; n++){ ap += 1; del *= x/ap; sum += del; if (Math.abs(del) < Math.abs(sum)*EPS) break; }
+    return sum * Math.exp(-x + a*Math.log(x) - gammln(a));
+  }
+  function gcf(a, x){
+    const ITMAX=200, EPS=3e-9, FPMIN=1e-30;
+    let b = x+1-a, c = 1/FPMIN, d = 1/b, h = d;
+    for (let i = 1; i <= ITMAX; i++){
+      const an = -i*(i-a); b += 2;
+      d = an*d+b; if (Math.abs(d)<FPMIN) d=FPMIN;
+      c = b+an/c; if (Math.abs(c)<FPMIN) c=FPMIN;
+      d = 1/d; const del = d*c; h *= del;
+      if (Math.abs(del-1) < EPS) break;
+    }
+    return Math.exp(-x + a*Math.log(x) - gammln(a)) * h;
+  }
+  function igamc(a, x){
+    if (x < 0 || a <= 0) return NaN;
+    if (x === 0) return 1;
+    if (x < a + 1) return 1 - gser(a, x);
+    return gcf(a, x);
+  }
+
+  // ===================================================================
+  // Clopper-Pearson ESATTO — riusato identico dal tool unificato.
+  // ===================================================================
+  function logGammaCP(x){
+    const g = 7;
+    const c = [0.99999999999980993,676.5203681218851,-1259.1392167224028,
+      771.32342877765313,-176.61502916214059,12.507343278686905,
+      -0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+    if (x<0.5) return Math.log(Math.PI/Math.sin(Math.PI*x)) - logGammaCP(1-x);
+    x -= 1; let a = c[0]; const t = x+g+0.5;
+    for (let i=1;i<g+2;i++) a += c[i]/(x+i);
+    return 0.5*Math.log(2*Math.PI) + (x+0.5)*Math.log(t) - t + Math.log(a);
+  }
+  function betacfCP(x,a,b){
+    const MAXIT=200, EPS=3e-16, FPMIN=1e-300;
+    const qab=a+b, qap=a+1, qam=a-1;
+    let c=1, d=1-qab*x/qap; if (Math.abs(d)<FPMIN) d=FPMIN; d=1/d; let h=d;
+    for (let m=1;m<=MAXIT;m++){
+      const m2=2*m;
+      let aa=m*(b-m)*x/((qam+m2)*(a+m2));
+      d=1+aa*d; if (Math.abs(d)<FPMIN) d=FPMIN;
+      c=1+aa/c; if (Math.abs(c)<FPMIN) c=FPMIN;
+      d=1/d; h*=d*c;
+      aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));
+      d=1+aa*d; if (Math.abs(d)<FPMIN) d=FPMIN;
+      c=1+aa/c; if (Math.abs(c)<FPMIN) c=FPMIN;
+      d=1/d; const del=d*c; h*=del;
+      if (Math.abs(del-1)<EPS) break;
+    }
+    return h;
+  }
+  function betaincCP(x,a,b){
+    if (x<=0) return 0; if (x>=1) return 1;
+    const bt=Math.exp(logGammaCP(a+b)-logGammaCP(a)-logGammaCP(b)+a*Math.log(x)+b*Math.log(1-x));
+    if (x<(a+1)/(a+b+2)) return bt*betacfCP(x,a,b)/a; else return 1-bt*betacfCP(1-x,b,a)/b;
+  }
+  function betaInvCP(p,a,b){
+    let lo=0,hi=1;
+    for (let i=0;i<100;i++){ const mid=(lo+hi)/2; if (betaincCP(mid,a,b)<p) lo=mid; else hi=mid; }
+    return (lo+hi)/2;
+  }
+  function clopperPearsonUpper(x,n,alpha){
+    alpha = alpha===undefined?0.01:alpha;
+    if (n<=0) return 1; if (x>=n) return 1;
+    return betaInvCP(1-alpha, x+1, n-x);
+  }
+
+  // ===================================================================
+  // SHA-256 puro JS + HMAC + HKDF (RFC 5869) — riusati identici.
+  // ===================================================================
+  const SHA256_K = new Uint32Array([
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+  ]);
+  function rrot(v,n){ return (v>>>n)|(v<<(32-n)); }
+  function sha256(message){
+    const l = message.length;
+    const bitLen = l * 8;
+    let totalLen = l + 1;
+    while (totalLen % 64 !== 56) totalLen++;
+    totalLen += 8;
+    const padded = new Uint8Array(totalLen);
+    padded.set(message);
+    padded[l] = 0x80;
+    const dv = new DataView(padded.buffer);
+    dv.setUint32(totalLen-4, bitLen>>>0, false);
+    dv.setUint32(totalLen-8, Math.floor(bitLen/0x100000000), false);
+    let H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+    const w = new Uint32Array(64);
+    for (let chunk=0; chunk<totalLen; chunk+=64){
+      for (let i=0;i<16;i++) w[i]=dv.getUint32(chunk+i*4,false);
+      for (let i=16;i<64;i++){
+        const s0 = rrot(w[i-15],7) ^ rrot(w[i-15],18) ^ (w[i-15]>>>3);
+        const s1 = rrot(w[i-2],17) ^ rrot(w[i-2],19) ^ (w[i-2]>>>10);
+        w[i] = (w[i-16]+s0+w[i-7]+s1)>>>0;
+      }
+      let a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+      for (let i=0;i<64;i++){
+        const S1 = rrot(e,6)^rrot(e,11)^rrot(e,25);
+        const ch = (e&f)^(~e&g);
+        const temp1 = (h+S1+ch+SHA256_K[i]+w[i])>>>0;
+        const S0 = rrot(a,2)^rrot(a,13)^rrot(a,22);
+        const maj = (a&b)^(a&c)^(b&c);
+        const temp2 = (S0+maj)>>>0;
+        h=g; g=f; f=e; e=(d+temp1)>>>0; d=c; c=b; b=a; a=(temp1+temp2)>>>0;
+      }
+      H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;
+      H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;
+    }
+    const out = new Uint8Array(32);
+    const outDv = new DataView(out.buffer);
+    for (let i=0;i<8;i++) outDv.setUint32(i*4, H[i], false);
+    return out;
+  }
+  function concatBytes(a,b){ const out=new Uint8Array(a.length+b.length); out.set(a,0); out.set(b,a.length); return out; }
+  function hmacSha256(keyBytes, msgBytes){
+    const blockSize = 64;
+    let key = keyBytes;
+    if (key.length > blockSize) key = sha256(key);
+    const k = new Uint8Array(blockSize); k.set(key);
+    const opad = new Uint8Array(blockSize), ipad = new Uint8Array(blockSize);
+    for (let i=0;i<blockSize;i++){ opad[i]=k[i]^0x5c; ipad[i]=k[i]^0x36; }
+    const inner = sha256(concatBytes(ipad, msgBytes));
+    return sha256(concatBytes(opad, inner));
+  }
+  function hkdfExtract(saltBytes, ikmBytes){ return hmacSha256(saltBytes, ikmBytes); }
+  function hkdfExpand(prkBytes, infoBytes, lengthBytes){
+    let t = new Uint8Array(0); let okm = []; let counter = 1;
+    while (okm.length < lengthBytes && counter <= 255){
+      const input = concatBytes(concatBytes(t, infoBytes), new Uint8Array([counter & 0xFF]));
+      t = hmacSha256(prkBytes, input);
+      okm = okm.concat(Array.from(t));
+      counter++;
+    }
+    return okm.slice(0, lengthBytes);
+  }
+
+  let _hwEntropyPad = null;
+  function getHardwareEntropyPad(){
+    if (_hwEntropyPad) return _hwEntropyPad;
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function'){
+      _hwEntropyPad = window.crypto.getRandomValues(new Uint8Array(32));
+    } else {
+      _hwEntropyPad = new Uint8Array(32);
+      console.warn('crypto.getRandomValues non disponibile.');
+    }
+    return _hwEntropyPad;
+  }
+
+  function makeSHA256BitStream(seedMaterialBytes){
+    let buffer = []; let pos = 0; let counter = 0;
+    function refill(){
+      const counterBytes = new Uint8Array(4);
+      new DataView(counterBytes.buffer).setUint32(0, counter, false);
+      const digest = sha256(concatBytes(counterBytes, seedMaterialBytes));
+      buffer = [];
+      for (let i=0;i<digest.length;i++) for (let b=7;b>=0;b--) buffer.push((digest[i]>>>b)&1);
+      pos = 0; counter++;
+    }
+    refill();
+    return { nextBit: function(){ if (pos >= buffer.length) refill(); return buffer[pos++]; } };
+  }
+  function seedMaterialForWindow(seedInt, windowId){
+    const bytes = new Uint8Array(8);
+    const dv = new DataView(bytes.buffer);
+    dv.setUint32(0, seedInt>>>0, false);
+    dv.setUint32(4, windowId>>>0, false);
+    return bytes;
+  }
+
+  // ===================================================================
+  // [ADATTATO — vedi CHANGELOG punto 3] Estrazione LSB dal dominio delle
+  // DIFFERENZE con segno (complemento a due su 16 bit), non dal dominio
+  // PCM unsigned. Esclusi SOLO: diff=0 (cancellazione esatta, nessuna
+  // informazione) e i due estremi con segno +32767/−32768 (overflow o
+  // clipping di conversione). NON si esclude l'estremo unsigned 0xFFFF,
+  // che in complemento a due è diff=−1: un valore di rumore piccolo e
+  // comune, la cui esclusione introdurrebbe un bias sistematico verso i
+  // valori positivi (vedi autotest "Filtro diff con segno" più sotto).
+  // ===================================================================
+  function extractLSBFromSignedDiff(diffBytes, skipFilter){
+    const bits = [];
+    let zeroExcluded = 0, clipExcluded = 0;
+    const usableLen = diffBytes.length - (diffBytes.length % 2);
+    const dv = new DataView(diffBytes.buffer, diffBytes.byteOffset, usableLen);
+    for (let i = 0; i < usableLen; i += 2){
+      const unsignedVal = dv.getUint16(i, true); // le, coerente con la scrittura in buildDiffBytes
+      const isZero = unsignedVal === 0;
+      const isClip = unsignedVal === 0x7FFF || unsignedVal === 0x8000; // +32767 / -32768
+      if (!skipFilter && (isZero || isClip)){
+        if (isZero) zeroExcluded++; else clipExcluded++;
+        continue;
+      }
+      bits.push(diffBytes[i] & 1); // LSB del byte meno significativo (little-endian)
+    }
+    return { bits, zeroExcluded, clipExcluded };
+  }
+
+  // ===================================================================
+  // [MANTENUTO — Peres 1992 completo] riusato identico dal tool unificato.
+  // ===================================================================
+  function peresExtract(bits){
+    const out = [];
+    function level(x){
+      const n = x.length - (x.length % 2);
+      if (n < 2) return;
+      const C = [], Z = [];
+      for (let i=0;i<n;i+=2){
+        const a=x[i], b=x[i+1];
+        if (a !== b){ out.push(a); C.push(1); } else { C.push(0); Z.push(a); }
+      }
+      level(C); level(Z);
+    }
+    level(bits);
+    return { bits: out, inputBits: bits.length, outputBits: out.length,
+      efficiencyPct: bits.length > 0 ? (out.length/bits.length)*100 : 0 };
+  }
+
+  // ===================================================================
+  // Toeplitz strong extractor — riusato identico dal tool unificato.
+  // ===================================================================
+  async function toeplitzExtract(bits, seedInt, windowId, blockOutSize, onProgress){
+    if (blockOutSize <= 0){
+      return { outputBits: [], leftover: bits.slice(0), blocksProcessed: 0,
+        totalBlocks: Math.floor(bits.length/TOEPLITZ_IN), blockOutSize: 0 };
+    }
+    const seedMaterial = seedMaterialForWindow(seedInt, windowId);
+    const stream = makeSHA256BitStream(seedMaterial);
+    let diag = new Uint8Array(TOEPLITZ_IN + blockOutSize - 1);
+    for (let i=0;i<diag.length;i++) diag[i] = stream.nextBit();
+
+    const outputBits = [];
+    let pos = 0, blockCount = 0;
+    const totalBlocks = Math.floor(bits.length / TOEPLITZ_IN);
+
+    while (pos + TOEPLITZ_IN <= bits.length){
+      for (let j=0;j<blockOutSize;j++){
+        let acc = 0;
+        for (let i=0;i<TOEPLITZ_IN;i++) acc ^= (bits[pos+i] & diag[i-j+(blockOutSize-1)]);
+        outputBits.push(acc);
+      }
+      const newDiag = new Uint8Array(TOEPLITZ_IN + blockOutSize - 1);
+      newDiag.set(diag.subarray(blockOutSize));
+      for (let k=0;k<blockOutSize;k++) newDiag[TOEPLITZ_IN-1+k] = stream.nextBit();
+      diag = newDiag;
+
+      pos += TOEPLITZ_IN; blockCount++;
+      if (blockCount % 12 === 0){ if (onProgress) onProgress(pos/bits.length); await sleep(25); }
+    }
+    return { outputBits, leftover: bits.slice(pos), blocksProcessed: blockCount, totalBlocks, blockOutSize };
+  }
+
+  function bitsToBytes(bits){
+    const bytes = [];
+    for (let i=0;i<bits.length;i+=8){ let byte=0; for (let j=0;j<8;j++) byte=(byte<<1)|(bits[i+j]||0); bytes.push(byte); }
+    return bytes;
+  }
+  function bytesToBits(bytes){
+    const out = [];
+    for (let i=0;i<bytes.length;i++) for (let b=7;b>=0;b--) out.push((bytes[i]>>>b)&1);
+    return out;
+  }
+  function intToBytes(n){ return [(n>>>24)&0xFF,(n>>>16)&0xFF,(n>>>8)&0xFF,n&0xFF]; }
+  function bytesToHex(bytes){ return Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+
+  function kdfExpand(bits, targetLen, seedInt){
+    if (bits.length >= targetLen) return { bits, realBits: bits.length, syntheticBits: 0, insufficientEntropy: false };
+    if (bits.length === 0) return { bits: [], realBits: 0, syntheticBits: 0, insufficientEntropy: true };
+    const anchorBits = bits.slice(Math.max(0, bits.length-256));
+    const anchorBytes = new Uint8Array(bitsToBytes(anchorBits));
+    const saltBytes = concatBytes(new Uint8Array(intToBytes(seedInt>>>0)), getHardwareEntropyPad());
+    const prk = hkdfExtract(saltBytes, anchorBytes);
+    const info = new TextEncoder().encode('entropy-extractor-hkdf-rawdark-v1');
+    const neededBits = targetLen - bits.length;
+    const neededBytes = Math.ceil(neededBits/8);
+    const okmBytes = hkdfExpand(prk, info, neededBytes);
+    const out = bits.slice();
+    const realBits = out.length;
+    for (let i=0;i<okmBytes.length && out.length<targetLen;i++){
+      for (let b=7;b>=0 && out.length<targetLen;b--) out.push((okmBytes[i]>>>b)&1);
+    }
+    return { bits: out, realBits, syntheticBits: out.length-realBits, insufficientEntropy: false };
+  }
+  function symmetricTruncate(bits, targetLen){
+    if (bits.length <= targetLen) return bits;
+    const excess = bits.length - targetLen;
+    const removeStart = Math.floor(excess/2);
+    return bits.slice(removeStart, removeStart+targetLen);
+  }
+
+  // ===================================================================
+  // NIST SP 800-22 — riusati identici dal tool unificato.
+  // ===================================================================
+  function monobitTest(bits){
+    const n = bits.length;
+    if (n < 100) return { name:'Frequency (Monobit)', insufficient:true };
+    let s = 0; for (let i=0;i<n;i++) s += (bits[i]===1?1:-1);
+    const sObs = Math.abs(s)/Math.sqrt(n);
+    const p = erfc(sObs/Math.SQRT2);
+    return { name:'Frequency (Monobit)', p, pass: p>=0.01 };
+  }
+  function blockFrequencyTest(bits){
+    const M=20, n=bits.length; const N=Math.floor(n/M);
+    if (n<100 || N<1) return { name:'Block Frequency (M=20)', insufficient:true };
+    let chiSq = 0;
+    for (let i=0;i<N;i++){
+      let ones=0; for (let j=0;j<M;j++){ if (bits[i*M+j]===1) ones++; }
+      const pi = ones/M; chiSq += Math.pow(pi-0.5,2);
+    }
+    chiSq *= 4*M;
+    const p = igamc(N/2, chiSq/2);
+    return { name:'Block Frequency (M=20)', p, pass: p>=0.01 };
+  }
+  function runsTest(bits){
+    const n = bits.length;
+    if (n < 100) return { name:'Runs', insufficient:true };
+    let ones=0; for (let i=0;i<n;i++) ones += bits[i];
+    const pi = ones/n;
+    if (Math.abs(pi-0.5) >= (2/Math.sqrt(n))) return { name:'Runs', p:0, pass:false };
+    let vObs=1; for (let k=1;k<n;k++){ if (bits[k]!==bits[k-1]) vObs++; }
+    const num = Math.abs(vObs - 2*n*pi*(1-pi));
+    const den = 2*Math.sqrt(2*n)*pi*(1-pi);
+    const p = erfc(num/den);
+    return { name:'Runs', p, pass: p>=0.01 };
+  }
+  function classifyLongestRun(maxRun, regime){
+    if (regime===8){ if (maxRun<=1) return 0; if (maxRun===2) return 1; if (maxRun===3) return 2; return 3; }
+    if (regime===128){ if (maxRun<=4) return 0; if (maxRun===5) return 1; if (maxRun===6) return 2;
+      if (maxRun===7) return 3; if (maxRun===8) return 4; return 5; }
+    if (maxRun<=10) return 0; if (maxRun===11) return 1; if (maxRun===12) return 2;
+    if (maxRun===13) return 3; if (maxRun===14) return 4; if (maxRun===15) return 5; return 6;
+  }
+  function longestRunTest(bits){
+    const n = bits.length;
+    if (n < 128) return { name:'Longest Run of Ones', insufficient:true };
+    let M,K,piVals;
+    if (n<6272){ M=8; K=3; piVals=[0.2148,0.3672,0.2305,0.1875]; }
+    else if (n<750000){ M=128; K=5; piVals=[0.1174,0.2430,0.2493,0.1752,0.1027,0.1124]; }
+    else { M=10000; K=6; piVals=[0.0882,0.2092,0.2483,0.1933,0.1208,0.0675,0.0727]; }
+    const N = Math.floor(n/M);
+    if (N < 1) return { name:'Longest Run of Ones (M='+M+')', insufficient:true };
+    const v = new Array(piVals.length).fill(0);
+    for (let i=0;i<N;i++){
+      let maxRun=0, curRun=0;
+      for (let j=0;j<M;j++){ if (bits[i*M+j]===1){ curRun++; if (curRun>maxRun) maxRun=curRun; } else curRun=0; }
+      v[classifyLongestRun(maxRun,M)]++;
+    }
+    let chiSq=0;
+    for (let i=0;i<piVals.length;i++){ chiSq += Math.pow(v[i]-N*piVals[i],2)/(N*piVals[i]); }
+    const p = igamc(K/2, chiSq/2);
+    return { name:'Longest Run of Ones (M='+M+')', p, pass: p>=0.01 };
+  }
+  function runAllTests(bits){ return [monobitTest(bits), blockFrequencyTest(bits), runsTest(bits), longestRunTest(bits)]; }
+
+  // ===================================================================
+  // Stime di min-entropia MCV/Collision con Clopper-Pearson — riusate
+  // identiche dal tool unificato.
+  // ===================================================================
+  function minEntropyMCV(bits){
+    const total = bits.length;
+    if (total === 0) return { p0:0,p1:0,pHat:0,hMin:0,count0:0,count1:0 };
+    let count1=0; for (let i=0;i<total;i++) count1 += bits[i];
+    const count0 = total-count1;
+    const p0=count0/total, p1=count1/total;
+    const x = Math.max(count0,count1);
+    const pHat = clopperPearsonUpper(x, total, 0.01);
+    const hMin = -Math.log2(Math.min(1, Math.max(pHat, 1e-12)));
+    return { p0,p1,pHat,hMin,count0,count1 };
+  }
+  function collisionEstimate(bits){
+    const n = bits.length;
+    if (n < 4) return { hMin:0, collisions:0, pairs:0, pColl:1, pMaxEst:1 };
+    let collisions=0; for (let i=0;i+1<n;i+=2){ if (bits[i]===bits[i+1]) collisions++; }
+    const pairs = Math.floor(n/2);
+    const pCollUpper = clopperPearsonUpper(collisions, pairs, 0.01);
+    const disc = 2*pCollUpper - 1;
+    const pMaxEst = disc<=0 ? 0.5 : Math.min(1, (1+Math.sqrt(disc))/2);
+    const hMin = -Math.log2(Math.max(pMaxEst, 1e-12));
+    return { hMin, collisions, pairs, pColl: collisions/pairs, pCollUpper, pMaxEst };
+  }
+  function combinedHmin(bits){
+    const mcv = minEntropyMCV(bits);
+    const coll = collisionEstimate(bits);
+    return { hMin: Math.min(mcv.hMin, coll.hMin), mcv, coll };
+  }
+
+  // ===================================================================
+  // Correlazione multi-lag fra finestre — riusata identica dal tool
+  // unificato (qui applicata alle tre finestre spaziali del blocco dati
+  // dark-frame invece che a fette temporali di un flusso PCM).
+  // ===================================================================
+  const CORR_MAX_LAG = 8;
+  const CORR_Z_THRESHOLD = 5;
+  const CORR_SAMPLE_CAP = 200000;
+
+  function subsampleForCorrelation(bits){ return bits.length <= CORR_SAMPLE_CAP ? bits : bits.slice(0, CORR_SAMPLE_CAP); }
+  function maxLagZScore(bitsA, bitsB, maxLag){
+    const a = subsampleForCorrelation(bitsA), b = subsampleForCorrelation(bitsB);
+    let maxAbsZ = 0, atLag = 0;
+    for (let lag=-maxLag; lag<=maxLag; lag++){
+      const offA = lag<0 ? -lag : 0;
+      const offB = lag>0 ? lag : 0;
+      const n = Math.min(a.length-offA, b.length-offB);
+      if (n <= 0) continue;
+      let dot = 0;
+      for (let i=0;i<n;i++){
+        const va = a[i+offA]===1 ? 1 : -1;
+        const vb = b[i+offB]===1 ? 1 : -1;
+        dot += va*vb;
+      }
+      const z = dot/Math.sqrt(n);
+      if (Math.abs(z) > Math.abs(maxAbsZ)){ maxAbsZ = z; atLag = lag; }
+    }
+    return { z: maxAbsZ, lag: atLag };
+  }
+
+  // ===================================================================
+  // [NUOVO] Costruzione della sorgente: differenza dark1 − dark2, parola
+  // per parola (16 bit), impacchettata come diffBytes little-endian
+  // interno (indipendente dall'ordine byte del RAW sorgente, già gestito
+  // in lettura da byteOrderSelect).
+  // ===================================================================
+  function buildDiffBytes(bufA, bufB, offset, length, littleEndianSource){
+    const numWordsUsable = Math.floor(length / 2);
+    const dvA = new DataView(bufA, offset, numWordsUsable*2);
+    const dvB = new DataView(bufB, offset, numWordsUsable*2);
+    const diffBytes = new Uint8Array(numWordsUsable*2);
+    const dvOut = new DataView(diffBytes.buffer);
+    for (let i=0;i<numWordsUsable;i++){
+      const v1 = dvA.getUint16(i*2, littleEndianSource);
+      const v2 = dvB.getUint16(i*2, littleEndianSource);
+      const diff = (v1 - v2) | 0; // può essere negativo
+      dvOut.setInt16(i*2, diff, true); // impacchettamento interno sempre little-endian
+    }
+    return diffBytes;
+  }
+  function buildWindowsFromDiffBytes(diffBytes){
+    const numWords = Math.floor(diffBytes.length / 2);
+    const third = Math.floor(numWords / 3);
+    function sliceWords(w0, w1){ return diffBytes.slice(w0*2, w1*2); }
+    return [
+      { id:1, label:'Inizio blocco',  data: sliceWords(0, third),        eligibleForWinner:true },
+      { id:2, label:'Centro blocco',  data: sliceWords(third, 2*third),  eligibleForWinner:true },
+      { id:3, label:'Fine blocco',    data: sliceWords(2*third, numWords), eligibleForWinner:true },
+      { id:4, label:'Blocco intero',  data: diffBytes.slice(0, numWords*2), eligibleForWinner:false }
+    ];
+  }
+
+  // ===================================================================
+  // PIPELINE PRINCIPALE
+  // ===================================================================
+  async function startAnalysis(){
+    if (!confirmUniqueEl.checked){ alert("Devi prima confermare la dichiarazione di unicità/autoproduzione."); return; }
+    const file1 = rawFile1El.files[0], file2 = rawFile2El.files[0];
+    if (!file1 || !file2){ alert("Seleziona entrambi i dark frame."); return; }
+
+    startBtn.disabled = true; rawFile1El.disabled = true; rawFile2El.disabled = true;
+
+    const seed = parseInt(seedInput.value, 10) || 0;
+    const targetBits = Math.max(128, parseInt(targetBitsInput.value, 10) || 512);
+    const skipFilter = skipFilterCheck.checked;
+    const rigorous = rigorousModeCheck.checked;
+
+    try {
+      phaseText.textContent = 'Lettura dei due dark frame (verifica dimensione)...';
+      progressBar.value = 2;
+      const managed1 = await readManagedFileBuffer(file1);
+      const managed2 = await readManagedFileBuffer(file2);
+      const buf1 = managed1.buffer, buf2 = managed2.buffer;
+
+      const anyTruncated = managed1.truncated || managed2.truncated;
+      let offset, length;
+      if (anyTruncated){
+        offset = 0;
+        length = Math.min(buf1.byteLength, buf2.byteLength);
+      } else {
+        offset = parseInt(rawOffsetEl.value, 10) || 0;
+        let reqLength = parseInt(rawLengthEl.value, 10) || 0;
+        if (offset < 0 || offset >= buf1.byteLength || offset >= buf2.byteLength){
+          throw new Error("Offset non valido per la dimensione di uno dei due file.");
+        }
+        if (reqLength <= 0) reqLength = Math.min(buf1.byteLength, buf2.byteLength) - offset;
+        length = Math.min(reqLength, buf1.byteLength - offset, buf2.byteLength - offset);
+      }
+      if (length < 2048){
+        throw new Error("Blocco dati comune troppo piccolo dopo offset/lunghezza (min 2048 byte). Controlla i campi.");
+      }
+      const littleEndianSource = byteOrderSelect.value !== 'big';
+
+      phaseText.textContent = 'Calcolo differenza dark1 − dark2 (parole a 16 bit)...';
+      progressBar.value = 8;
+      await sleep(10);
+      const diffBytes = buildDiffBytes(buf1, buf2, offset, length, littleEndianSource);
+
+      const windows = buildWindowsFromDiffBytes(diffBytes);
+      cardsContainer.innerHTML = '';
+      const cardEls = windows.map(w => createCardSkeleton(w));
+      cardEls.forEach(el => cardsContainer.appendChild(el));
+
+      const results = [];
+      const lsbBitsByWindow = [];
+
+      for (let wi=0; wi<windows.length; wi++){
+        const win = windows[wi];
+        const baseProgress = 10 + (wi/windows.length) * 85;
+        const progressSlice = 85 / windows.length;
+
+        phaseText.textContent = 'Finestra ' + win.id + '/4 (' + win.label + '): estrazione LSB e filtro diff=0/estremi...';
+        progressBar.value = baseProgress;
+        await sleep(15);
+
+        const lsbRes = extractLSBFromSignedDiff(win.data, skipFilter);
+        lsbBitsByWindow[wi] = lsbRes.bits;
+        progressBar.value = baseProgress + progressSlice*0.10;
+        await sleep(10);
+
+        const sourceEnt = combinedHmin(lsbRes.bits);
+        const sourceHMinAbs = sourceEnt.hMin * lsbRes.bits.length;
+        let gateFailReason = null;
+        if (lsbRes.bits.length < 64){
+          gateFailReason = 'Sorgente LSB troppo corta dopo il filtro diff=0/estremi (' + lsbRes.bits.length + ' bit).';
+        } else if (sourceEnt.hMin < MIN_SOURCE_HMIN_RATE && sourceHMinAbs < MIN_SOURCE_HMIN_ABS){
+          gateFailReason = 'Min-entropia sorgente insufficiente (H_min=' + sourceEnt.hMin.toFixed(4) +
+            ' bit/bit, assoluta≈' + sourceHMinAbs.toFixed(0) + '). Richiesto ≥' + MIN_SOURCE_HMIN_RATE +
+            ' bit/bit oppure ≥' + MIN_SOURCE_HMIN_ABS + ' bit assoluti.';
+        }
+
+        phaseText.textContent = 'Finestra ' + win.id + '/4: debiasing di Peres (completo)...';
+        const peresRes = peresExtract(lsbRes.bits);
+        progressBar.value = baseProgress + progressSlice*0.25;
+        await sleep(10);
+
+        if (!gateFailReason && peresRes.bits.length < MIN_POST_PERES_BITS){
+          gateFailReason = 'Bit post-Peres insufficienti (' + peresRes.bits.length + ' < ' + MIN_POST_PERES_BITS + ').';
+        }
+
+        const preEntropy = combinedHmin(peresRes.bits);
+        const preConditioningPoolBits = peresRes.bits.length;
+        const totalMinEntropyBits = isFinite(preEntropy.hMin) ? preEntropy.hMin * preConditioningPoolBits : 0;
+        const lhlSafeOutputBits = Math.max(0, Math.floor(totalMinEntropyBits - LHL_SECURITY_MARGIN));
+        const ratioPractical = isFinite(preEntropy.hMin) ? preEntropy.hMin * PRACTICAL_SAFETY_FACTOR : 0;
+        const ratioFromLHL = preConditioningPoolBits > 0 ? (lhlSafeOutputBits/preConditioningPoolBits) : 0;
+        const extractionRatio = Math.max(0, Math.min(ratioPractical, ratioFromLHL, MAX_EXTRACTION_RATIO));
+        const blockOutSize = Math.floor(TOEPLITZ_IN * extractionRatio);
+
+        const numericScheme = {
+          lsbBits: lsbRes.bits.length, peresBits: preConditioningPoolBits,
+          peresEfficiencyPct: peresRes.efficiencyPct,
+          hMinMCV: preEntropy.mcv.hMin, hMinColl: preEntropy.coll.hMin, hMin: preEntropy.hMin,
+          totalMinEntropyBits, ratioPractical, ratioFromLHL, extractionRatio,
+          blockIn: TOEPLITZ_IN, blockOut: blockOutSize, lhlSafeOutputBits,
+          zeroExcluded: lsbRes.zeroExcluded, clipExcluded: lsbRes.clipExcluded
+        };
+
+        let toepRes = { outputBits: [], blocksProcessed: 0, totalBlocks: Math.floor(preConditioningPoolBits/TOEPLITZ_IN) };
+        let finalBits = [], realBits = 0, syntheticBits = 0;
+
+        if (!gateFailReason){
+          phaseText.textContent = 'Finestra ' + win.id + '/4: estrazione Toeplitz (rapporto ' + (extractionRatio*100).toFixed(1) + '%)...';
+          if (blockOutSize <= 0){
+            gateFailReason = 'Rapporto di estrazione calcolato ≤0: entropia pre-condizionamento troppo bassa rispetto al margine di sicurezza richiesto.';
+          } else {
+            toepRes = await toeplitzExtract(peresRes.bits, seed, win.id, blockOutSize, function(frac){
+              progressBar.value = baseProgress + progressSlice*(0.30+0.45*frac);
+              phaseText.textContent = 'Finestra ' + win.id + '/4: Toeplitz (' + Math.round(frac*100) + '%)...';
+            });
+            if (toepRes.blocksProcessed < 1){
+              gateFailReason = 'Nessun blocco Toeplitz completo (servono ≥' + TOEPLITZ_IN + ' bit post-Peres).';
+            } else {
+              finalBits = toepRes.outputBits;
+              realBits = finalBits.length;
+              if (finalBits.length < targetBits){
+                if (!rigorous){
+                  const kdfRes = kdfExpand(finalBits, targetBits, seed ^ (win.id * 2654435761));
+                  finalBits = kdfRes.bits; realBits = kdfRes.realBits; syntheticBits = kdfRes.syntheticBits;
+                }
+              } else if (finalBits.length > targetBits){
+                finalBits = symmetricTruncate(finalBits, targetBits);
+                realBits = finalBits.length;
+              }
+            }
+          }
+        }
+
+        progressBar.value = baseProgress + progressSlice*0.85;
+        await sleep(10);
+
+        phaseText.textContent = 'Finestra ' + win.id + '/4: test NIST SP 800-22...';
+        const tests = (gateFailReason || finalBits.length < 100)
+          ? [{name:'Frequency (Monobit)',insufficient:true},{name:'Block Frequency (M=20)',insufficient:true},
+             {name:'Runs',insufficient:true},{name:'Longest Run of Ones',insufficient:true}]
+          : runAllTests(finalBits);
+        const finalEnt = (gateFailReason || finalBits.length === 0)
+          ? { hMin:0, mcv:{count0:0,count1:0,hMin:0}, coll:{hMin:0} }
+          : combinedHmin(finalBits);
+
+        progressBar.value = baseProgress + progressSlice;
+        await sleep(10);
+
+        results.push({
+          win, gateFailReason, excludedTotal: lsbRes.zeroExcluded + lsbRes.clipExcluded,
+          sourceEnt, preEntropy, numericScheme,
+          blocksProcessed: toepRes.blocksProcessed, totalBlocks: toepRes.totalBlocks,
+          finalBits, realBits, syntheticBits, rigorous,
+          tests, entropy: finalEnt
+        });
+      }
+
+      progressBar.value = 96;
+      phaseText.textContent = 'Analisi completata sulle 4 finestre. Verifica correlazione incrociata...';
+      await sleep(10);
+
+      for (let a=0;a<windows.length;a++){
+        for (let b=a+1;b<windows.length;b++){
+          if (!windows[a].eligibleForWinner || !windows[b].eligibleForWinner) continue;
+          if (results[a].gateFailReason || results[b].gateFailReason) continue;
+          const corr = maxLagZScore(lsbBitsByWindow[a], lsbBitsByWindow[b], CORR_MAX_LAG);
+          if (Math.abs(corr.z) > CORR_Z_THRESHOLD){
+            const detail = ' (z=' + corr.z.toFixed(1) + ' a lag ' + corr.lag + ', soglia ' + CORR_Z_THRESHOLD + ')';
+            windows[a].eligibleForWinner = false; windows[b].eligibleForWinner = false;
+            results[a].correlationNote = 'Correlata con Finestra ' + windows[b].id + detail + ' — esclusa dalla competizione per la vittoria (dati comunque mostrati).';
+            results[b].correlationNote = 'Correlata con Finestra ' + windows[a].id + detail + ' — esclusa dalla competizione per la vittoria (dati comunque mostrati).';
+          }
+        }
+      }
+
+      let winnerIdx = -1, bestScore = -Infinity;
+      results.forEach((r, idx) => {
+        const eligible = !r.gateFailReason && r.win.eligibleForWinner && r.finalBits.length >= 128;
+        r.comparisonEligible = eligible;
+        if (!eligible){ r.score = null; return; }
+        const passed = r.tests.filter(t => t.pass).length;
+        const h = isFinite(r.entropy.hMin) ? r.entropy.hMin : 0;
+        const score = passed*10 + h + (r.finalBits.length/1000);
+        r.score = score; r.testsPassedCount = passed;
+        if (score > bestScore){ bestScore = score; winnerIdx = idx; }
+      });
+
+      results.forEach((r, idx) => renderCard(cardEls[idx], r, idx === winnerIdx));
+      renderComparisonTable(results, winnerIdx);
+
+      progressBar.value = 100;
+      let statusText = winnerIdx >= 0
+        ? 'Audit completato. Finestra scelta come migliore (indipendente, gate superati): ' + results[winnerIdx].win.label +
+          ' (' + results[winnerIdx].finalBits.length + ' bit). Vedi il pannello "Confronto fra le finestre" per il perché.'
+        : 'Audit completato. Nessuna finestra indipendente ha superato i gate. Verificare la sorgente.';
+      if (anyTruncated){
+        statusText += ' ⚠ Usata solo una porzione centrale (10 MB dal 40%) di ' +
+          (managed1.truncated && managed2.truncated ? 'entrambi i dark frame' : managed1.truncated ? 'Dark frame 1' : 'Dark frame 2') + '.';
+      }
+      phaseText.textContent = statusText;
+
+    } catch (err){
+      console.error(err);
+      phaseText.textContent = 'Errore durante l\'analisi: ' + err.message;
+    } finally {
+      startBtn.disabled = false; rawFile1El.disabled = !confirmUniqueEl.checked; rawFile2El.disabled = !confirmUniqueEl.checked;
+      startBtn.textContent = 'RIAVVIA ANALISI DARK FRAME';
+    }
+  }
+
+  startBtn.addEventListener('click', function(){ startAnalysis(); });
+
+  // ===================================================================
+  // RENDERING UI — riusato dal tool unificato, con etichette adattate al
+  // dominio RAW/dark-frame (zeroExcluded/clipExcluded al posto del solo
+  // "darkFrames", righe extra nello schema numerico).
+  // ===================================================================
+  function renderComparisonTable(results, winnerIdx){
+    const panel = document.getElementById('comparisonPanel');
+    const table = document.getElementById('comparisonTable');
+    panel.style.display = 'block';
+    table.innerHTML = results.map((r, idx) => {
+      const isChosen = idx === winnerIdx;
+      let statusHtml;
+      if (r.gateFailReason){
+        statusHtml = '<span class="warn-text">gate fallito</span>';
+      } else if (!r.win.eligibleForWinner){
+        statusHtml = '<span class="warn-text">esclusa dal confronto (correlata con un\'altra finestra)</span>';
+      } else if (r.comparisonEligible){
+        statusHtml = '<span class="pass">ammessa al confronto</span>' + (isChosen ? '<span class="selected-tag">Scelta come migliore</span>' : '');
+      } else {
+        statusHtml = '<span class="warn-text">bit insufficienti per il confronto</span>';
+      }
+      const rowClass = 'cmp-row' + (isChosen ? ' cmp-selected' : '') + (r.gateFailReason ? ' cmp-failed' : '');
+      const scoreTxt = (r.score !== null && r.score !== undefined) ? r.score.toFixed(3) : 'n/d';
+      const testsTxt = (r.testsPassedCount !== undefined) ? r.testsPassedCount + '/4' : 'n/d';
+      const hTxt = (r.entropy && isFinite(r.entropy.hMin)) ? r.entropy.hMin.toFixed(4) : 'n/d';
+      const bitsTxt = r.finalBits ? r.finalBits.length : 0;
+      return '<div class="' + rowClass + '">' +
+        '<span class="cmp-label">' + r.win.label + '</span>' +
+        '<span>' + statusHtml + '</span>' +
+        '<span>test NIST: ' + testsTxt + '</span>' +
+        '<span>H_min: ' + hTxt + '</span>' +
+        '<span>bit prodotti: ' + bitsTxt + '</span>' +
+        '<span>punteggio: ' + scoreTxt + '</span>' +
+        '</div>';
+    }).join('');
+  }
+
+  function createCardSkeleton(win){
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = '<h2>Finestra ' + win.id + ' — ' + win.label + '</h2><div class="loading">In coda per elaborazione...</div>';
+    return div;
+  }
+  function bitsToDisplayString(bits){ return bits.join(''); }
+
+  function numericSchemeHtml(result){
+    const s = result.numericScheme;
+    const marginBitsLHL = s.lhlSafeOutputBits - (result.blocksProcessed * s.blockOut);
+    return '<div class="numeric-scheme">' +
+      '<div class="ns-title">SCHEMA NUMERICO — Finestra ' + result.win.id + ' (' + result.win.label + ')</div>' +
+      '<div class="ns-row"><span>Parole-differenza escluse (diff=0)</span><span>' + s.zeroExcluded.toLocaleString() + '</span></div>' +
+      '<div class="ns-row"><span>Parole-differenza escluse (estremo ±32767/32768)</span><span>' + s.clipExcluded.toLocaleString() + '</span></div>' +
+      '<div class="ns-row"><span>Bit LSB grezzi in ingresso (post-filtro)</span><span>' + s.lsbBits.toLocaleString() + '</span></div>' +
+      '<div class="ns-row"><span>Bit dopo debiasing di Peres (completo)</span><span>' + s.peresBits.toLocaleString() +
+        ' <span class="ns-sub">(efficienza: ' + s.peresEfficiencyPct.toFixed(1) + '%)</span></span></div>' +
+      '<div class="ns-row"><span>Min-entropia PRE-Toeplitz — MCV</span><span>' + (isFinite(s.hMinMCV)?s.hMinMCV.toFixed(4):'n/d') + ' bit/bit</span></div>' +
+      '<div class="ns-row"><span>Min-entropia PRE-Toeplitz — Collision</span><span>' + (isFinite(s.hMinColl)?s.hMinColl.toFixed(4):'n/d') + ' bit/bit</span></div>' +
+      '<div class="ns-row ns-highlight"><span>Min-entropia combinata (minimo dei due)</span><span>' + (isFinite(s.hMin)?s.hMin.toFixed(4):'n/d') + ' bit/bit</span></div>' +
+      '<div class="ns-row"><span>Entropia assoluta stimata nel pool</span><span>' + s.totalMinEntropyBits.toFixed(1) + ' bit</span></div>' +
+      '<div class="ns-row"><span>Rapporto pratico (H_min×0.85)</span><span>' + (s.ratioPractical*100).toFixed(1) + '%</span></div>' +
+      '<div class="ns-row"><span>Rapporto da bound LHL (ε=2⁻⁴⁰)</span><span>' + (s.ratioFromLHL*100).toFixed(1) + '%</span></div>' +
+      '<div class="ns-row ns-highlight"><span>Rapporto Toeplitz APPLICATO (il più conservativo)</span><span>' + (s.extractionRatio*100).toFixed(1) + '%</span></div>' +
+      '<div class="ns-row"><span>Blocco Toeplitz</span><span>' + s.blockIn + ' bit in → ' + s.blockOut + ' bit out</span></div>' +
+      '<div class="ns-row"><span>Blocchi elaborati</span><span>' + result.blocksProcessed + ' / ' + result.totalBlocks + '</span></div>' +
+      '<div class="ns-row"><span>Bit realmente estratti da Toeplitz</span><span>' + (result.blocksProcessed*s.blockOut) + '</span></div>' +
+      '<div class="ns-row"><span>Bound LHL — massimo assoluto sicuro</span><span>~' + s.lhlSafeOutputBits + ' bit</span></div>' +
+      '<div class="ns-row ns-highlight"><span>Margine residuo rispetto al bound LHL</span><span>' + (marginBitsLHL>=0?'+':'') + marginBitsLHL + ' bit</span></div>' +
+      '</div>';
+  }
+
+  function renderCard(el, result, isWinner){
+    const failed = !!result.gateFailReason;
+    el.classList.toggle('winner', isWinner && !failed);
+    el.classList.toggle('failed', failed);
+    el.classList.toggle('not-eligible', !result.win.eligibleForWinner);
+
+    let html = '<h2>Finestra ' + result.win.id + ' — ' + result.win.label +
+      (isWinner && !failed ? '<span class="selected-tag">Scelta come migliore</span>' : '') + (failed ? ' ✗' : '') +
+      (!result.win.eligibleForWinner ? '<span class="not-eligible-tag">esclusa dal confronto — non indipendente</span>' : '') + '</h2>';
+
+    if (failed) html += '<div class="gate-fail">GATE FALLITO: ' + result.gateFailReason + '</div>';
+    if (result.correlationNote) html += '<div class="gate-fail" style="color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-border);">AVVISO INDIPENDENZA: ' + result.correlationNote + '</div>';
+
+    html += '<div class="row"><span class="k">Bit sorgente LSB (post-filtro)</span><span>' + result.numericScheme.lsbBits.toLocaleString() + '</span></div>';
+    html += '<div class="row"><span class="k">Parole escluse (diff=0 / estremi)</span><span>' + result.numericScheme.zeroExcluded.toLocaleString() + ' / ' + result.numericScheme.clipExcluded.toLocaleString() + '</span></div>';
+    html += '<div class="row"><span class="k">H_min sorgente (MCV / Collision)</span><span>' +
+      (isFinite(result.sourceEnt.mcv.hMin)?result.sourceEnt.mcv.hMin.toFixed(4):'n/d') + ' / ' +
+      (isFinite(result.sourceEnt.coll.hMin)?result.sourceEnt.coll.hMin.toFixed(4):'n/d') + ' bit/bit</span></div>';
+
+    const bits = result.finalBits;
+    if (bits.length > 0){
+      const mcv = result.entropy.mcv, coll = result.entropy.coll;
+      html += '<div class="balance">' + bits.length + ' bit: (0:' + (mcv.count0||0) + ' | 1:' + (mcv.count1||0) + ')</div>';
+      html += '<div class="bitstring">' + bitsToDisplayString(bits) + '</div>';
+      html += '<div class="provenance">Provenienza: <span class="real">' + result.realBits + ' bit reali (Toeplitz)</span>' +
+        (result.syntheticBits > 0 ? ' + <span class="synth">' + result.syntheticBits + ' bit sintetici (padding HKDF)</span>' : '') + '</div>';
+      if (result.syntheticBits > 0){
+        html += '<div class="gate-fail" style="color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-border);">Avviso: ' + result.syntheticBits +
+          ' dei ' + bits.length + ' bit finali sono padding HKDF sintetico, non derivati dalla sorgente.</div>';
+      }
+      html += '<div class="row"><span class="k">Min-Entropia finale (MCV / Collision)</span><span>' +
+        (isFinite(mcv.hMin)?mcv.hMin.toFixed(4):'n/d') + ' / ' + (isFinite(coll.hMin)?coll.hMin.toFixed(4):'n/d') + ' bit/bit</span></div>';
+      html += '<div class="balance">Nota: questa stima è calcolata sull\'output finale (dopo Toeplitz) — vedi lo schema numerico PRE-condizionamento sotto per l\'entropia realmente misurata sulla sorgente.</div>';
+    }
+
+    html += numericSchemeHtml(result);
+
+    html += '<div style="margin-top:8px;">';
+    result.tests.forEach(t => {
+      if (t.insufficient) html += '<div class="test-row"><span>' + t.name + '</span><span class="insufficient">Bit insufficienti</span></div>';
+      else html += '<div class="test-row"><span>' + t.name + '</span><span class="' + (t.pass?'pass':'fail') + '">p=' + t.p.toFixed(4) + ' — ' + (t.pass?'PASS':'FAIL') + '</span></div>';
+    });
+    html += '</div>';
+
+    html += '<div class="foot-counters">Escluse diff=0/estremi: ' + result.excludedTotal.toLocaleString() +
+      (result.rigorous ? ' &nbsp;|&nbsp; <span style="color:var(--accent)">Modalità rigorosa ON</span>' : ' &nbsp;|&nbsp; <span class="warn-text">Modalità non rigorosa</span>') + '</div>';
+
+    el.innerHTML = html;
+
+    if (!failed && bits.length >= 128){
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'dl-btn';
+      dlBtn.textContent = 'ESPORTA BUFFER BINARIO (.bin)';
+      dlBtn.addEventListener('click', function(){
+        downloadBin(bits, 'finestra_' + result.win.id + '_' + result.win.label.toLowerCase().replace(/\s+/g,'_') + '.bin');
+      });
+      el.appendChild(dlBtn);
+
+      if (isWinner){
+        const shaBtn = document.createElement('button');
+        shaBtn.className = 'sha-btn';
+        shaBtn.textContent = 'CALCOLA SHA-256 FINALE (256 bit)';
+        const shaOut = document.createElement('div');
+        shaOut.style.display = 'none';
+        shaBtn.addEventListener('click', function(){
+          const digestBytes = sha256(new Uint8Array(bitsToBytes(bits)));
+          const digestBits = bytesToBits(digestBytes);
+          const digestHex = bytesToHex(digestBytes);
+          shaOut.innerHTML =
+            '<div class="digest-note">SHA-256(' + bits.length + ' bit della finestra scelta come migliore) — whitening/formattazione a lunghezza fissa, NON una stima di entropia aggiuntiva:</div>' +
+            '<div class="digest-box">' + digestBits.join('') + '</div>' +
+            '<div class="digest-note">Esadecimale: ' + digestHex + '</div>';
+          shaOut.style.display = 'block';
+          if (!shaOut.querySelector('.dl-btn')){
+            const shaDlBtn = document.createElement('button');
+            shaDlBtn.className = 'dl-btn';
+            shaDlBtn.textContent = 'ESPORTA DIGEST SHA-256 (.bin, 32 byte)';
+            shaDlBtn.addEventListener('click', function(){ downloadBin(digestBits, 'finestra_' + result.win.id + '_sha256_finale.bin'); });
+            shaOut.appendChild(shaDlBtn);
+          }
+        });
+        el.appendChild(shaBtn);
+        el.appendChild(shaOut);
+      }
+    }
+  }
+
+  function downloadBin(bits, filename){
+    const bytes = new Uint8Array(bitsToBytes(bits));
+    const blob = new Blob([bytes], { type:'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ===================================================================
+  // AUTOTEST ALL'AVVIO — nucleo crittografico/matematico riusato
+  // identico dal tool unificato, più due test specifici di questo tool
+  // (filtro diff con segno, cancellazione di un pattern fisso sintetico).
+  // ===================================================================
+  function toeplitzReferenceIndependent(allBits, seedInt, windowId, blockOutSize){
+    const n = TOEPLITZ_IN;
+    const seedMaterial = seedMaterialForWindow(seedInt, windowId);
+    const stream = makeSHA256BitStream(seedMaterial);
+    let diag = [];
+    for (let i=0;i<n+blockOutSize-1;i++) diag.push(stream.nextBit());
+    const results = [];
+    let pos = 0;
+    while (pos+n <= allBits.length){
+      for (let j=0;j<blockOutSize;j++){
+        let acc = 0;
+        for (let i=0;i<n;i++){ const idx = i-j+(blockOutSize-1); acc = acc ^ (allBits[pos+i]*diag[idx]); }
+        results.push(acc);
+      }
+      const newDiag = diag.slice(blockOutSize);
+      for (let k=0;k<blockOutSize;k++) newDiag.push(stream.nextBit());
+      diag = newDiag;
+      pos += n;
+    }
+    return results;
+  }
+  function toeplitzExtractSync(bits, seedInt, windowId, blockOutSize){
+    if (blockOutSize <= 0) return [];
+    const seedMaterial = seedMaterialForWindow(seedInt, windowId);
+    const stream = makeSHA256BitStream(seedMaterial);
+    let diag = new Uint8Array(TOEPLITZ_IN + blockOutSize - 1);
+    for (let i=0;i<diag.length;i++) diag[i] = stream.nextBit();
+    const outputBits = [];
+    let pos = 0;
+    while (pos + TOEPLITZ_IN <= bits.length){
+      for (let j=0;j<blockOutSize;j++){
+        let acc = 0;
+        for (let i=0;i<TOEPLITZ_IN;i++) acc ^= (bits[pos+i] & diag[i-j+(blockOutSize-1)]);
+        outputBits.push(acc);
+      }
+      const newDiag = new Uint8Array(TOEPLITZ_IN + blockOutSize - 1);
+      newDiag.set(diag.subarray(blockOutSize));
+      for (let k=0;k<blockOutSize;k++) newDiag[TOEPLITZ_IN-1+k] = stream.nextBit();
+      diag = newDiag;
+      pos += TOEPLITZ_IN;
+    }
+    return outputBits;
+  }
+
+  function runSelfTestsSync(){
+    const results = [];
+    function test(name, fn){
+      try { const r = fn(); results.push({ name, ok: r===true, detail: r===true?'':String(r) }); }
+      catch (e){ results.push({ name, ok:false, detail:'eccezione: '+e.message }); }
+    }
+
+    test('Clopper-Pearson: auto-consistenza inversione beta incompleta', function(){
+      const cases = [[0.5,3,7],[0.99,1,9],[0.95,10,5],[0.01,2,2]];
+      for (const [p,a,b] of cases){
+        const x = betaInvCP(p,a,b);
+        const back = betaincCP(x,a,b);
+        if (Math.abs(back-p) > 1e-3) return 'mismatch p='+p+' a='+a+' b='+b+': back='+back;
+      }
+      const known = clopperPearsonUpper(0,10,0.01);
+      if (Math.abs(known-0.369) > 0.01) return 'CP(0,10,99%) atteso ~0.369, ottenuto '+known.toFixed(4);
+      return true;
+    });
+
+    test('Peres Extractor: conservazione della massa (output ≤ input, deterministico)', function(){
+      const stream = makeSHA256BitStream(new TextEncoder().encode('autotest-peres-seed'));
+      for (let trial=0; trial<8; trial++){
+        const n = 2000 + trial*500;
+        const bits = []; for (let i=0;i<n;i++) bits.push(stream.nextBit());
+        const res = peresExtract(bits);
+        if (res.bits.length > n) return 'output ('+res.bits.length+') supera l\'input ('+n+') al trial '+trial;
+      }
+      return true;
+    });
+
+    test('Peres Extractor: efficienza su input equo deterministico > 80%', function(){
+      const stream = makeSHA256BitStream(new TextEncoder().encode('autotest-peres-fair'));
+      const bits = []; for (let i=0;i<20000;i++) bits.push(stream.nextBit());
+      const res = peresExtract(bits);
+      if (res.efficiencyPct <= 80) return 'efficienza troppo bassa: '+res.efficiencyPct.toFixed(1)+'%';
+      return true;
+    });
+
+    test('Toeplitz: coerenza con implementazione indipendente (diagonali)', function(){
+      const cases = [[1,1],[4,4],[10,7],[7,25],[33,31],[50,80]];
+      const stream = makeSHA256BitStream(new TextEncoder().encode('autotest-toeplitz-src'));
+      for (const [m,n] of cases){
+        const x = []; for (let i=0;i<n;i++) x.push(stream.nextBit());
+        const a = toeplitzExtractSync(x, 987654321, 3, m);
+        const b = toeplitzReferenceIndependent(x, 987654321, 3, m);
+        if (JSON.stringify(a) !== JSON.stringify(b)) return 'mismatch per m='+m+',n='+n;
+      }
+      return true;
+    });
+
+    test('Collision Estimate: coerente con MCV su dati fortemente equi (deterministico)', function(){
+      const stream = makeSHA256BitStream(new TextEncoder().encode('autotest-collision-fair'));
+      const bits = []; for (let i=0;i<100000;i++) bits.push(stream.nextBit());
+      const h = combinedHmin(bits);
+      if (h.mcv.hMin < 0.9) return 'MCV.hMin troppo basso su sorgente equa: '+h.mcv.hMin.toFixed(4);
+      if (h.coll.hMin < 0.85) return 'Collision.hMin troppo basso su sorgente equa: '+h.coll.hMin.toFixed(4);
+      return true;
+    });
+
+    // --- [NUOVO, specifico di questo tool] ---
+    test('Filtro diff con segno: esclude SOLO diff=0/±estremo, NON diff=±1', function(){
+      // Costruisce parole-differenza sintetiche coprendo i casi limite.
+      const diffValues = [0, 1, -1, 2, -2, 32767, -32768, 100, -100];
+      const bytes = new Uint8Array(diffValues.length * 2);
+      const dv = new DataView(bytes.buffer);
+      diffValues.forEach((v,i) => dv.setInt16(i*2, v, true));
+      const res = extractLSBFromSignedDiff(bytes, false);
+      // Attesi esclusi: indice 0 (diff=0), indice 5 (32767), indice 6 (-32768) → 3 esclusi, 6 mantenuti.
+      if (res.zeroExcluded !== 1) return 'zeroExcluded atteso 1, ottenuto '+res.zeroExcluded;
+      if (res.clipExcluded !== 2) return 'clipExcluded atteso 2, ottenuto '+res.clipExcluded;
+      if (res.bits.length !== 6) return 'bit mantenuti attesi 6 (incl. diff=±1), ottenuti '+res.bits.length;
+      return true;
+    });
+
+    test('Differenza dark1−dark2: cancella un pattern fisso sintetico noto', function(){
+      // frame1 = pattern + rumore pseudocasuale; frame2 = pattern (stesso pattern,
+      // nessun rumore): la differenza deve isolare esattamente il rumore.
+      const n = 4000;
+      const pattern = new Uint16Array(n);
+      for (let i=0;i<n;i++) pattern[i] = (i * 37) % 4000 + 1000; // pattern fisso deterministico, mai 0/estremo
+      const stream = makeSHA256BitStream(new TextEncoder().encode('autotest-darkframe-pattern'));
+      const noise = new Int16Array(n);
+      for (let i=0;i<n;i++){ let v=0; for (let b=0;b<5;b++) v=(v<<1)|stream.nextBit(); noise[i] = v - 16; } // rumore piccolo in [-16,15]
+
+      const buf1 = new ArrayBuffer(n*2), buf2 = new ArrayBuffer(n*2);
+      const dv1 = new DataView(buf1), dv2 = new DataView(buf2);
+      for (let i=0;i<n;i++){
+        dv1.setUint16(i*2, pattern[i] + noise[i], true);
+        dv2.setUint16(i*2, pattern[i], true);
+      }
+      const diff = buildDiffBytes(buf1, buf2, 0, n*2, true);
+      const dvDiff = new DataView(diff.buffer);
+      for (let i=0;i<n;i++){
+        const got = dvDiff.getInt16(i*2, true);
+        if (got !== noise[i]) return 'a i='+i+' atteso diff='+noise[i]+', ottenuto '+got+' (pattern non cancellato correttamente)';
+      }
+      return true;
+    });
+
+    return results;
+  }
+
+  async function runCryptoVectorTests(){
+    const results = [];
+    function record(name, ok, detail){ results.push({ name, ok, detail: ok?'':(detail||'') }); }
+
+    try {
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(0)));
+      const hex = bytesToHex(digest);
+      record('SHA-256: vettore di test noto (stringa vuota)', hex === 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'ottenuto '+hex);
+    } catch (e){ record('SHA-256: vettore di test noto (stringa vuota)', false, e.message); }
+
+    try {
+      const jsHex = bytesToHex(sha256(new TextEncoder().encode('abc')));
+      record('SHA-256 (implementazione JS pura): vettore di test noto ("abc")', jsHex === 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'ottenuto '+jsHex);
+    } catch (e){ record('SHA-256 (implementazione JS pura): vettore di test noto ("abc")', false, e.message); }
+
+    try {
+      const key = new Uint8Array(20).fill(0x0b);
+      const data = new TextEncoder().encode('Hi There');
+      const hex = bytesToHex(hmacSha256(key, data));
+      record('HMAC-SHA256: vettore di test RFC 4231 (caso 1)', hex === 'b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7', 'ottenuto '+hex);
+    } catch (e){ record('HMAC-SHA256: vettore di test RFC 4231 (caso 1)', false, e.message); }
+
+    try {
+      function hexToBytes(h){ const out=new Uint8Array(h.length/2); for (let i=0;i<out.length;i++) out[i]=parseInt(h.substr(i*2,2),16); return out; }
+      const ikm = new Uint8Array(22).fill(0x0b);
+      const salt = hexToBytes('000102030405060708090a0b0c');
+      const info = hexToBytes('f0f1f2f3f4f5f6f7f8f9');
+      const prk = hkdfExtract(salt, ikm);
+      const prkHex = bytesToHex(prk);
+      const prkOk = prkHex === '077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5';
+      const okm = hkdfExpand(prk, info, 42);
+      const okmHex = bytesToHex(new Uint8Array(okm));
+      const okmOk = okmHex === '3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865';
+      record('HKDF-Extract/Expand: vettore di test RFC 5869 (caso 1)', prkOk && okmOk, 'PRK '+(prkOk?'ok':'ERRATO: '+prkHex)+' — OKM '+(okmOk?'ok':'ERRATO: '+okmHex));
+    } catch (e){ record('HKDF-Extract/Expand: vettore di test RFC 5869 (caso 1)', false, e.message); }
+
+    return results;
+  }
+
+  async function displaySelfTestResults(){
+    const area = document.getElementById('selfTestArea');
+    const sync = runSelfTestsSync();
+    const crypto_ = await runCryptoVectorTests();
+    const all = [...crypto_, ...sync];
+    const allPass = all.every(r => r.ok);
+    area.innerHTML = all.map(r =>
+      '<div class="test-row"><span>'+r.name+'</span><span class="'+(r.ok?'pass':'fail')+'">'+
+      (r.ok?'PASS':'FAIL — '+r.detail)+'</span></div>'
+    ).join('') + '<div style="margin-top:8px;font-weight:bold;" class="'+(allPass?'pass':'fail')+'">'+
+      (allPass?'Tutti gli autotest superati.':'ALCUNI AUTOTEST FALLITI — possibile regressione, non fidarsi dei risultati della pipeline.')+'</div>';
+  }
+
+  displaySelfTestResults();
+
+})();
+</script>
+</body>
+</html>
