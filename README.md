@@ -49,23 +49,39 @@ dell'utente e i file caricati non lasciano mai il dispositivo.
    sorgenti eque, molto superiore al von Neumann classico (~25%).
 4. **Stima dell'entropia**: due stimatori indipendenti — Most-Common-Value e
    Collision Estimate — entrambi con limite di confidenza superiore di
-   Clopper-Pearson esatto al 99%. Si usa il minimo dei due (più conservativo).
-5. **Gate obbligatori** prima di procedere: lunghezza minima post-debiasing,
-   min-entropia minima della sorgente, almeno un blocco Toeplitz completo. Se
-   un gate fallisce, quella finestra non produce output "creato dal nulla":
-   viene segnalata come fallita.
-6. **Estrazione forte**: matrice di Toeplitz (Leftover Hash Lemma), con
+   Clopper-Pearson esatto al 99%. Si usa il minimo dei due (più conservativo)
+   per dimensionare l'estrazione. In aggiunta, due stimatori di ordine
+   superiore — t-Tuple e Longest Repeated Substring (LRS) — agiscono come
+   **gate strutturale dedicato**: rilevano strutture periodiche o ripetute
+   nel rumore residuo che MCV/Collision da soli non vedono (es. un pattern
+   fisso residuo del sensore o un artefatto di lettura), senza incidere sul
+   rendimento di estrazione delle finestre sane (vedi CHANGELOG v3 per il
+   perché di questa separazione).
+5. **Health test retrospettivi**: Repetition Count Test (RCT) e Adaptive
+   Proportion Test (APT), SP 800-90B §4.4, applicati ai bit grezzi di ogni
+   finestra prima del debiasing — intercettano run anomali o drift locale
+   che le stime globali mediano via.
+6. **Gate obbligatori** prima di procedere: lunghezza minima post-debiasing,
+   min-entropia minima della sorgente, health test superati, gate strutturale
+   superato, almeno un blocco Toeplitz completo. Se un gate fallisce, quella
+   finestra non produce output "creato dal nulla": viene segnalata come
+   fallita, con il motivo specifico indicato.
+7. **Estrazione forte**: matrice di Toeplitz (Leftover Hash Lemma), con
    rapporto di estrazione dimensionato dinamicamente sull'entropia realmente
    misurata (mai un valore fisso).
-7. **Finestre indipendenti**: il blocco dati viene diviso in tre finestre
+8. **Finestre indipendenti**: il blocco dati viene diviso in tre finestre
    spaziali (Inizio / Centro / Fine) più una quarta di controllo (Blocco
    intero, unione delle altre tre — esclusa per costruzione perché non
    indipendente). Le finestre 1/2/3 vengono anche testate fra loro per
    correlazione incrociata (multi-lag): se due risultano correlate, entrambe
    vengono escluse dal confronto (dati comunque mostrati per trasparenza).
-8. **Test statistici**: 4 test della suite NIST SP 800-22 (Monobit, Block
+9. **Test statistici**: 4 test della suite NIST SP 800-22 (Monobit, Block
    Frequency, Runs, Longest Run of Ones) sull'output finale di ciascuna
    finestra.
+10. **Digest finale**: SHA-256 obbligatorio a schermo, più SHAKE256 (XOF,
+    Keccak-f[1600]) opzionale, entrambi sulla finestra scelta come migliore —
+    whitening/formattazione a lunghezza fissa, non stime di entropia
+    aggiuntiva.
 
 ### Criterio di scelta della finestra "migliore"
 
@@ -86,10 +102,15 @@ dell'esclusione delle altre è sempre visibile — non è un'etichetta
 ## Limiti e cose da sapere
 
 - **Non sostituisce una suite di test di casualità completa.** I 4 test NIST
-  qui inclusi sono un sottoinsieme dei 15 della batteria SP 800-22, e le
-  stime di min-entropia (MCV + Collision) sono un sottoinsieme della batteria
-  NIST SP 800-90B (mancano, fra gli altri, Markov, compressione, t-Tuple,
-  LRS, LZ78Y).
+  qui inclusi sono un sottoinsieme dei 15 della batteria SP 800-22. Le stime
+  di min-entropia (MCV, Collision, t-Tuple, LRS) più i due health test
+  retrospettivi (RCT, APT) coprono più terreno della sola coppia MCV+Collision
+  iniziale, ma restano un sottoinsieme della batteria SP 800-90B (mancano,
+  fra gli altri, Markov, compressione/Universal di Maurer, LZ78Y). t-Tuple e
+  LRS, per motivi di prestazioni su flussi di centinaia di migliaia di bit,
+  esaminano solo un campione dei primi 20.000 bit per finestra e pattern fino
+  a una lunghezza massima limitata (vedi CHANGELOG v3): non incidono sulla
+  min-entropia usata per l'estrazione, ma fungono da gate dedicato.
 - **Il seed è pubblico per costruzione** (proprietà del Leftover Hash Lemma):
   non deve essere tenuto segreto. Ciò che deve restare segreto/unico è il
   file RAW sorgente stesso.
@@ -139,7 +160,16 @@ autotest di regressione, visibile nel pannello dedicato:
   due estremi ±32767/−32768, e che diff=±1 venga invece mantenuto;
 - **cancellazione del pattern fisso**: verifica che la sottrazione
   dark1−dark2 isoli esattamente un rumore sintetico noto, cancellando un
-  pattern deterministico sovrapposto.
+  pattern deterministico sovrapposto;
+- **SHAKE256** contro vettori di test ufficiali NIST (stringa vuota, "abc");
+- **t-Tuple/LRS**: rilevano una sequenza periodica non banale che MCV da
+  solo giudicherebbe equa, senza falsi positivi su una sorgente equa
+  deterministica;
+- **RCT/APT**: rilevano un run costante patologico e il caso di regressione
+  noto dell'APT (esclusione del simbolo di riferimento dal proprio
+  conteggio), senza falsi positivi su una sorgente equa deterministica;
+- guardia di regressione sulle prestazioni del gate strutturale (vedi
+  CHANGELOG v3).
 
 Se un autotest fallisce, il pannello lo segnala in rosso: in quel caso non
 fidarsi dei risultati della pipeline (probabile regressione nel codice).
