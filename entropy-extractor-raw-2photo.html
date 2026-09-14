@@ -108,32 +108,17 @@
 <body>
 
 <h1>Entropy Extractor — RAW 2-Photo (Dark Frame)</h1>
-<div class="subtitle">Versione unificata: motore di estrazione/audit portato 1:1 dalla Pipeline Multi-Finestra (Peres + Toeplitz + MCV/Collision/t-Tuple/LRS con Clopper-Pearson 99% + RCT/APT SP 800-90B §4.4 + 4/15 NIST SP 800-22), applicato alla differenza pixel-per-pixel fra due dark frame. Digest: SHA-256 + SHAKE256 opzionale. Esecuzione locale, nessuna dipendenza esterna.</div>
+<div class="subtitle">Build 4.0.0-beta2 — BETA non ancora pubblicata su GitHub. Motore: Peres + Toeplitz + Clopper-Pearson (MCV/Collision/t-Tuple/LRS) + RCT/APT, applicato alla differenza pixel-per-pixel fra due dark frame. Test: 9/15 NIST SP 800-22. Changelog completo: CHANGELOG.md.</div>
 <p style="font-family:var(--mono);font-size:0.68rem;color:var(--muted);margin:-8px 0 12px;">build 2026-09-11 v3 — portati da EntropyPipeline (stesso autore): stimatori di min-entropia t-Tuple e LRS come gate strutturale dedicato, health test retrospettivi RCT/APT (SP 800-90B §4.4) come gate per finestra, digest opzionale SHAKE256 (Keccak-f[1600]). Vedi CHANGELOG punto 9 per dettagli e adattamenti. Terminologia "scelta come migliore" invariata (vedi CHANGELOG punto 8).</p>
 
 <div class="doc-panel">
-  <strong>DOCUMENTAZIONE E ASSUNZIONI (obbligatorie)</strong><br>
-  • Scopo: cancellare per sottrazione il rumore a pattern fisso del sensore (pixel caldi, dark current) comune a due dark frame identici (stesse impostazioni, obiettivo tappato/otturatore chiuso), ed estrarre bit dal rumore casuale residuo (shot/read noise) per un uso successivo in altri strumenti.<br>
-  • <span class="warn">I due file devono provenire dalla stessa fotocamera, stesse impostazioni (esposizione, ISO, temperatura) e idealmente scatti ravvicinati.</span> Offset/lunghezza/ordine byte impostati qui sotto vengono applicati a entrambi i file (si assume stessa struttura).<br>
-  • Rilevamento automatico del blocco dati funzionante solo per contenitori basati su TIFF (DNG e molte CR2/NEF/ARW/ORF/PEF). Per CR3, RAF, alcuni RW2 il rilevamento può fallire: impostare offset/lunghezza manualmente.<br>
-  • Molti formati RAW comprimono internamente i dati del sensore (lossless-JPEG/Huffman): in tal caso i bit riflettono anche l'algoritmo di compressione, non solo il rumore fisico. Preferire, se possibile, RAW non compresso.<br>
-  • Assunzione conservativa sulla sorgente: i LSB dei campioni-differenza non a zero/non agli estremi sono trattati come aventi <strong>min-entropia sconosciuta</strong>, stimata empiricamente con MCV + Collision (che determinano il rapporto di estrazione Toeplitz) e ulteriormente sottoposta a un gate strutturale dedicato con t-Tuple + LRS (rilevano strutture periodiche/ripetute che MCV/Collision da soli non vedono) e a due health test retrospettivi RCT + APT (SP 800-90B §4.4, rilevano run anomali/drift locale) — tutti PRIMA dell'estrazione.<br>
-  • <strong>Nessuna creazione di entropia</strong> in modalità rigorosa (default): se l'estrattore produce meno bit del target richiesto, la finestra restituisce solo i bit realmente estratti.<br>
-  • Gate obbligatori: lunghezza post-Peres ≥ 1024 bit; H_min della sorgente (minimo fra MCV e Collision) ≥ 0.05 bit/bit oppure ≥ 256 bit assoluti; almeno un blocco Toeplitz completo (512 bit in ingresso).<br>
-  • <span class="warn">Il seed è pubblico</span> per costruzione (proprietà del Leftover Hash Lemma): non deve essere segreto. Se il file RAW è pubblico/riproducibile da terzi, l'entropia crittografica reale è vicina a ZERO indipendentemente da questi test — da qui la dichiarazione di unicità obbligatoria qui sotto.<br>
-  • File molto grandi (&gt;10 MB) non vengono caricati per intero: viene letta solo una porzione di 10 MB a partire dal 40% del file (vedi CHANGELOG punto 5); in tal caso l'auto-rilevamento TIFF viene saltato.
-  <details>
-    <summary>Changelog di adattamento (RAW dark-frame ← tool audio/PCM unificato)</summary>
-    <div class="changelog-item"><strong>1. Motore matematico riusato senza modifiche.</strong> SHA-256/HMAC/HKDF, Clopper-Pearson esatto, Peres Extractor completo, Toeplitz strong extractor a rapporto dinamico, stime MCV/Collision, suite NIST (Monobit/Block Frequency/Runs/Longest Run), controllo di correlazione incrociata fra finestre e autotest all'avvio sono portati identici dalla Pipeline Multi-Finestra, già verificati contro vettori RFC ufficiali e riferimenti indipendenti. Nessuna riverifica necessaria su questa parte.</div>
-    <div class="changelog-item"><strong>2. Sorgente sostituita: non più PCM decodificato, ma differenza dark1−dark2.</strong> Al posto dei campioni audio, la sorgente grezza è ora la differenza parola-per-parola (16 bit) fra due dark frame allineati, letta direttamente dal blocco dati RAW (rilevato via parser TIFF/IFD o offset manuale). Il pattern fisso comune ai due scatti si cancella per sottrazione; resta prevalentemente rumore casuale indipendente fra i due scatti.</div>
-    <div class="changelog-item"><strong>3. [Bug reale corretto] Filtro di esclusione tarato sul dominio SIGNED, non più UNSIGNED.</strong> Il filtro di saturazione ereditato dal tool PCM escludeva, fra gli altri, il valore letto in UNSIGNED 0xFFFF. Per un campione PCM questo è un estremo di clipping legittimo da escludere; per una DIFFERENZA con segno in complemento a due, 0xFFFF rappresenta invece <strong>diff = −1</strong>, un valore di rumore piccolo e del tutto comune — escluderlo introduceva un'asimmetria sistematica (ogni −1 scartato, ogni +1 mantenuto), sbilanciando artificialmente p0/p1 sui bit selezionati. Verificato riproducendo il caso (1000 campioni con diff=−1 venivano scartati come "saturi" al 100% con il filtro ereditato). Corretto: per questo tool si esclude SOLO diff=0 (cancellazione esatta, nessuna informazione) e i due estremi con segno ±32768/32767 (overflow/clip di conversione), non più l'estremo unsigned 0xFFFF. Vedi autotest dedicato "Filtro diff con segno" nel pannello sotto.</div>
-    <div class="changelog-item"><strong>4. Rimossa la selezione euristica "migliori bit per varianza locale + diversità zone".</strong> Nella versione precedente del tool RAW, i bit venivano scelti con una euristica basata su varianza locale e vincoli di copertura arbitrari (min 3, obiettivo 5 zone su 6), senza una giustificazione statistica formale del perché quella selezione preservi (o migliori) l'indipendenza dei bit. Sostituita dall'approccio del tool unificato: l'intero campione della finestra passa per Peres + Toeplitz, con il rapporto di estrazione dimensionato dinamicamente sulla min-entropia realmente misurata (bound del Leftover Hash Lemma) — nessuna selezione arbitraria di sottoinsiemi.</div>
-    <div class="changelog-item"><strong>5. Rimossi i metodi DIFF/PARITY come canali aggiuntivi concatenati.</strong> La versione precedente concatenava LSB + segno-della-differenza-fra-campioni-consecutivi + parità dello stesso campione, senza stabilire l'indipendenza statistica fra questi tre bit derivati dallo stesso dato. Qui resta un solo canale per campione (LSB della differenza dark1−dark2), evitando ridondanza/correlazione non misurata fra "metodi" diversi applicati alla stessa sorgente.</div>
-    <div class="changelog-item"><strong>6. Finestre spaziali invece di barcode di posizione.</strong> Sostituita la visualizzazione "barcode" di distribuzione dei bit selezionati con la stessa struttura a finestre indipendenti del tool unificato (Inizio / Centro / Fine del blocco dati + Blocco intero, quest'ultimo escluso dalla vittoria perché non indipendente), incluso il controllo di correlazione incrociata multi-lag fra le tre finestre spaziali prima del debiasing.</div>
-    <div class="changelog-item"><strong>7. Mantenuti dal tool RAW originale.</strong> Dichiarazione obbligatoria di unicità/autoproduzione del file (gate bloccante sugli input), parser TIFF/IFD per il rilevamento automatico del blocco dati (StripOffsets/TileOffsets, incluse SubIFD), campi manuali di offset/lunghezza/ordine byte, e limite di memoria con lettura a porzione (File.slice) per file oltre 10 MB.</div>
-    <div class="changelog-item"><strong>8. [v2] Rinominato il tool e rimosso il linguaggio "finestra vincente/vincitrice".</strong> Il file è ora "entropy-extractor-raw-2photo.html". La finestra con il punteggio più alto è ora indicata come "scelta come migliore", con un badge neutro invece della stella. Aggiunto un pannello dedicato ("Confronto fra le finestre e criterio di scelta") che mostra, per ciascuna finestra, lo stato (ammessa / gate fallito / esclusa per correlazione), i test NIST superati, la min-entropia e il punteggio calcolato — così il motivo per cui una finestra è stata scelta e le altre no è visibile ed esplicito, non solo implicito in un'etichetta.</div>
-    <div class="changelog-item"><strong>9. [v3] Portati da EntropyPipeline (stesso autore, stesso repository owner): SHAKE256, t-Tuple, LRS, RCT, APT.</strong> EntropyPipeline (tool "manuale" con incolla-bit, stesso motore matematico di base) implementava quattro elementi assenti qui: la funzione XOF SHAKE256 (Keccak-f[1600] puro JS, verificato contro vettori NIST ufficiali), due stimatori di min-entropia di ordine superiore (t-Tuple e Longest Repeated Substring, capaci di rilevare strutture periodiche/ripetute nel rumore residuo che MCV e Collision — statistiche di ordine 0/1 — non vedono per costruzione) e due health test retrospettivi SP 800-90B §4.4 (Repetition Count Test e Adaptive Proportion Test). Portati con adattamenti espliciti scoperti durante il testing: (a) t-Tuple/LRS operano su un campione limitato ai primi 20.000 bit per finestra (TTUPLE_LRS_SAMPLE_CAP), dato che i flussi LSB di questo tool possono arrivare a centinaia di migliaia di bit contro le centinaia/migliaia tipiche dei bit incollati a mano nella sorgente originale; (b) un bug reale di scalabilità nella sorgente originale — né t-Tuple né LRS vi limitano la lunghezza massima di pattern esaminata, e su una sequenza periodica il costo può esplodere a miliardi di operazioni (riprodotto: il porting iniziale ha bloccato la pipeline di test per minuti su un singolo caso periodico) — è stato corretto qui con due limiti (TTUPLE_MAX_T=64, LRS_MAX_SEARCH_LEN=256) verificati non alterare il comportamento su rumore reale; (c) t-Tuple/LRS NON sono inclusi nel calcolo della min-entropia che determina il rapporto di estrazione Toeplitz (a differenza della sorgente originale) — su campioni di questa taglia LRS in particolare resta strutturalmente intorno a 0.35-0.43 bit/bit anche su rumore perfettamente equo (natura conservativa nota dell'estimatore, non un segnale reale), e includerlo nel minimo avrebbe dimezzato il rapporto di estrazione pratico su ogni analisi sana; restano invece un GATE strutturale dedicato (soglie STRUCTURAL_TTUPLE_GATE_THRESHOLD=0.15, STRUCTURAL_LRS_GATE_THRESHOLD=0.12, calibrate con ampio margine empirico fra sorgenti sane e periodiche); (d) RCT/APT (costo O(n), nessun campionamento necessario) sono applicati ai bit LSB grezzi di ciascuna finestra come gate aggiuntivo PRIMA del debiasing di Peres, con la stessa priorità/criterio "il più pessimista vince" già in uso per gli altri gate della finestra. Aggiunto anche un pulsante opzionale SHAKE256 accanto al digest SHA-256 per la finestra scelta come migliore, a parità di lunghezza di output. Autotest aggiunti: vettori SHAKE256 ufficiali NIST, rilevamento di una sequenza periodica non banale da parte di t-Tuple/LRS (con verifica che MCV da solo la giudicherebbe equa), assenza di falsi positivi RCT/APT/t-Tuple/LRS su sorgente equa deterministica, il caso di regressione APT (esclusione del simbolo di riferimento dal proprio conteggio) e una guardia di regressione sulle prestazioni del gate strutturale. Verificato con una suite di test end-to-end in Node.js (unit test sui singoli stimatori + simulazione completa della pipeline con sorgenti sintetiche sane e patologiche) prima del rilascio.</div>
-  </details>
+  <strong>DOCUMENTAZIONE ESSENZIALE</strong><br>
+  • Cancella per sottrazione il rumore a pattern fisso del sensore comune a due dark frame identici; estrae bit dal rumore casuale residuo (shot/read noise).<br>
+  • I due file devono provenire dalla stessa fotocamera, stesse impostazioni. <span class="warn">Il seed è pubblico</span>: non deve essere segreto.<br>
+  • <strong>Nessuna creazione di entropia</strong> in modalità rigorosa (default): mai bit sintetici silenziosi.<br>
+  • Gate obbligatori: lunghezza post-Peres ≥ 1024 bit; H_min sorgente ≥ 0.05 bit/bit oppure ≥ 256 bit assoluti; almeno un blocco Toeplitz completo (512 bit in ingresso).<br>
+  • RAW compressi internamente (lossless-JPEG/Huffman) fanno riflettere le statistiche anche sulla compressione, non solo sul rumore fisico — preferire RAW non compresso quando possibile.<br>
+  • Changelog completo: <code>CHANGELOG.md</code>. Note d'audit dettagliate (versioni precedenti): <code>AUDIT-NOTES.md</code>. Principi di design: <code>SECURITY-NOTES.md</code>.
 </div>
 
 <div class="consent-zone">
@@ -178,6 +163,19 @@
         <option value="big">Big-endian (Motorola, "MM")</option>
       </select>
     </div>
+    <div>
+      <label>Margine di sicurezza LHL (ε)</label>
+      <select id="epsSelect">
+        <option value="80">2⁻⁸⁰</option>
+        <option value="64">2⁻⁶⁴</option>
+        <option value="40" selected>2⁻⁴⁰ (default preesistente)</option>
+        <option value="20">2⁻²⁰</option>
+        <option value="16">2⁻¹⁶ (ridotto — solo dimostrativo)</option>
+      </select>
+    </div>
+    <div style="align-self:flex-end;">
+      <button id="biasedDemoBtn" title="Genera con CSPRNG reale due dark frame sintetici la cui differenza è deliberatamente sbilanciata, per vedere come reagiscono i gate — non sono dark frame reali">Demo sbilanciata (test)</button>
+    </div>
   </div>
   <div id="detectInfo">Carica il Dark frame 1 per tentare il rilevamento automatico del blocco dati.</div>
   <div class="controls-row" style="margin-top:8px;">
@@ -192,6 +190,12 @@
   </div>
   <progress id="progressBar" value="0" max="100"></progress>
   <div id="phaseText">In attesa dei due dark frame...</div>
+</div>
+
+<div class="panel">
+  <div style="font-size:0.85rem;color:var(--accent);margin-bottom:8px;font-weight:bold;">Integrità dell'applicazione <span style="font-weight:normal;color:var(--muted);">— controllo diagnostico</span></div>
+  <div style="font-size:0.72rem;color:var(--muted);margin-bottom:8px;line-height:1.5;">SHA-256 del blocco &lt;script&gt; core, calcolato al caricamento. Copre solo il codice JS, non l'intero HTML: verifica di star eseguendo il codice atteso (utile offline), non è una firma digitale del documento. Hash atteso per questa build pubblicato in CHANGELOG.md.</div>
+  <div id="coreFingerprint" style="font-family:var(--mono);font-size:0.72rem;background:var(--well-bg);border:1px solid var(--well-border);border-radius:4px;padding:8px;word-break:break-all;">calcolo…</div>
 </div>
 
 <div class="panel">
@@ -215,7 +219,7 @@
 
 <div class="cards" id="cardsContainer"></div>
 
-<script>
+<script id="core-script">
 (function(){
   "use strict";
 
@@ -233,10 +237,14 @@
   const STRUCTURAL_LRS_GATE_THRESHOLD = 0.12;
   const STRUCTURAL_TTUPLE_GATE_THRESHOLD = 0.15;
   const TOEPLITZ_IN = 512;
-  const LHL_EPSILON_BITS = 40;
-  const LHL_SECURITY_MARGIN = 2 * LHL_EPSILON_BITS;
+  const LHL_EPSILON_STANDARD_K = 40; // comportamento di default preesistente, invariato
+  let reducedMarginConfirmed = false;
   const PRACTICAL_SAFETY_FACTOR = 0.85;
   const MAX_EXTRACTION_RATIO = 0.90;
+  // [NUOVO] Tetto di emissione conservativo, indipendente dal bound LHL sopra:
+  // mai più della metà dei bit consumati in ingresso per blocco Toeplitz. Vedi
+  // SECURITY-NOTES.md, principio 2.
+  const EMISSION_CAP_BLOCK_OUT = Math.floor(TOEPLITZ_IN / 2);
 
   const MAX_MANAGED_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
   const MANAGED_SLICE_START_FRACTION = 0.4;        // 40% del file
@@ -249,6 +257,8 @@
   const rawOffsetEl = document.getElementById('rawOffset');
   const rawLengthEl = document.getElementById('rawLength');
   const byteOrderSelect = document.getElementById('byteOrderSelect');
+  const epsSelect = document.getElementById('epsSelect');
+  const biasedDemoBtn = document.getElementById('biasedDemoBtn');
   const detectInfo = document.getElementById('detectInfo');
   const skipFilterCheck = document.getElementById('skipFilterCheck');
   const rigorousModeCheck = document.getElementById('rigorousModeCheck');
@@ -895,7 +905,128 @@
     const p = igamc(K/2, chiSq/2);
     return { name:'Longest Run of Ones (M='+M+')', p, pass: p>=0.01 };
   }
-  function runAllTests(bits){ return [monobitTest(bits), blockFrequencyTest(bits), runsTest(bits), longestRunTest(bits)]; }
+  // [NUOVO] Serial Test completo — SP 800-22 §2.11 — due statistiche ∇ψ²m/∇²ψ²m
+  // CON estensione ciclica del campione, conforme alla specifica NIST. Riusa
+  // gli stessi erfc/igamc già presenti e verificati in questo file, nessuna
+  // macchina matematica nuova. Identico a quello già verificato con test
+  // rigorosi in "entropy-extractor" (stesso autore, stesso nucleo).
+  function serialPsiSq(bits, m){
+    const n = bits.length;
+    if (m <= 0) return 0;
+    const counts = new Array(Math.pow(2,m)).fill(0);
+    for (let i=0;i<n;i++){
+      let idx=0;
+      for (let j=0;j<m;j++) idx=(idx<<1)|bits[(i+j)%n];
+      counts[idx]++;
+    }
+    let sum=0; for (const c of counts) sum+=c*c;
+    return (Math.pow(2,m)/n)*sum - n;
+  }
+  function serialTest(bits, m){
+    m = m || 3;
+    const n = bits.length;
+    if (n < Math.pow(2,m+2)) return { name: 'Serial (m='+m+', completo)', insufficient: true };
+    const psiM=serialPsiSq(bits,m), psiM1=serialPsiSq(bits,m-1), psiM2=serialPsiSq(bits,m-2);
+    const d1=psiM-psiM1, d2=psiM-2*psiM1+psiM2;
+    const p1=igamc(Math.pow(2,m-2), d1/2);
+    const p2=igamc(Math.pow(2,m-3), d2/2);
+    return { name: 'Serial (m='+m+', completo — ∇ψ²/∇²ψ²)', p:p1, p2:p2, pass: p1>=0.01 && p2>=0.01 };
+  }
+
+  // [NUOVO] Approximate Entropy Test completo — SP 800-22 §2.12 — CON
+  // estensione ciclica.
+  function apEnPhi(bits, m){
+    const n = bits.length;
+    const counts = new Array(Math.pow(2,m)).fill(0);
+    for (let i=0;i<n;i++){
+      let idx=0;
+      for (let j=0;j<m;j++) idx=(idx<<1)|bits[(i+j)%n];
+      counts[idx]++;
+    }
+    let sum=0; for (const c of counts){ if (c>0){ const p=c/n; sum += p*Math.log(p); } }
+    return sum;
+  }
+  function apEnTest(bits, m){
+    m = m || 2;
+    const n = bits.length;
+    if (n < Math.pow(2,m+3)) return { name: 'Approximate Entropy (m='+m+', completo)', insufficient: true };
+    const phiM=apEnPhi(bits,m), phiM1=apEnPhi(bits,m+1);
+    const apen = phiM-phiM1;
+    const chiSq = 2*n*(Math.log(2)-apen);
+    const p = igamc(Math.pow(2,m-1), chiSq/2);
+    return { name: 'Approximate Entropy (m='+m+', completo)', p:p, pass: p>=0.01 };
+  }
+
+  // [NUOVO] Cumulative Sums (Cusum) Test — SP 800-22 §2.13 — direzione diretta
+  // e inversa (2 righe distinte, non 2 "metodi" dello stesso calcolo).
+  function cusumTest(bits, mode){
+    const n = bits.length;
+    if (n < 100) return { name: 'Cumulative Sums ('+(mode==='forward'?'diretto':'inverso')+')', insufficient: true };
+    let X = bits.map(b=>2*b-1);
+    if (mode === 'backward') X = X.slice().reverse();
+    let sum=0, z=0;
+    for (let i=0;i<n;i++){ sum+=X[i]; if (Math.abs(sum)>z) z=Math.abs(sum); }
+    const name = 'Cumulative Sums (' + (mode==='forward'?'diretto':'inverso') + ')';
+    if (z===0) return { name, p:1, pass:true };
+    function normCdfLocal(x){ return 0.5*erfc(-x/Math.SQRT2); }
+    let sum1=0;
+    const start1=Math.floor((-n/z+1)/4), end1=Math.floor((n/z-1)/4);
+    for (let k=start1;k<=end1;k++) sum1 += normCdfLocal(((4*k+1)*z)/Math.sqrt(n)) - normCdfLocal(((4*k-1)*z)/Math.sqrt(n));
+    let sum2=0;
+    const start2=Math.floor((-n/z-3)/4), end2=Math.floor((n/z-1)/4);
+    for (let k=start2;k<=end2;k++) sum2 += normCdfLocal(((4*k+3)*z)/Math.sqrt(n)) - normCdfLocal(((4*k+1)*z)/Math.sqrt(n));
+    let p = 1 - sum1 + sum2;
+    p = Math.min(1, Math.max(0, p));
+    return { name, p, pass: p>=0.01 };
+  }
+
+  // [NUOVO] Binary Matrix Rank Test — SP 800-22 §2.5 — matrici 32×32, rango su
+  // GF(2) per eliminazione gaussiana.
+  function buildRow32(bits, start){
+    let val=0;
+    for (let c=0;c<32;c++) val = (val<<1) | bits[start+c];
+    return val>>>0;
+  }
+  function matrixRankGF2_32(rows){
+    rows = rows.slice();
+    const R = rows.length;
+    let rank=0;
+    for (let col=31; col>=0 && rank<R; col--){
+      const bit = 1<<col;
+      let pivot=-1;
+      for (let r=rank;r<R;r++){ if (rows[r] & bit){ pivot=r; break; } }
+      if (pivot===-1) continue;
+      const tmp=rows[rank]; rows[rank]=rows[pivot]; rows[pivot]=tmp;
+      for (let r=0;r<R;r++){ if (r!==rank && (rows[r]&bit)) rows[r]^=rows[rank]; }
+      rank++;
+    }
+    return rank;
+  }
+  function rankTest(bits){
+    const n = bits.length;
+    const blockBits = 1024;
+    const N = Math.floor(n/blockBits);
+    if (N < 1) return { name: 'Binary Matrix Rank (32×32)', insufficient: true };
+    let fullRank=0, fullMinus1=0;
+    for (let b=0;b<N;b++){
+      const rows=[];
+      for (let r=0;r<32;r++) rows.push(buildRow32(bits, b*blockBits+r*32));
+      const rk = matrixRankGF2_32(rows);
+      if (rk===32) fullRank++; else if (rk===31) fullMinus1++;
+    }
+    const rest = N-fullRank-fullMinus1;
+    const piFull=0.2888, piMinus1=0.5776, piRest=0.1336;
+    const chiSq = Math.pow(fullRank-piFull*N,2)/(piFull*N) +
+                  Math.pow(fullMinus1-piMinus1*N,2)/(piMinus1*N) +
+                  Math.pow(rest-piRest*N,2)/(piRest*N);
+    const p = igamc(1, chiSq/2);
+    return { name: 'Binary Matrix Rank (32×32)', p, pass: p>=0.01 };
+  }
+
+  function runAllTests(bits){
+    return [monobitTest(bits), blockFrequencyTest(bits), runsTest(bits), longestRunTest(bits),
+      serialTest(bits,3), apEnTest(bits,2), cusumTest(bits,'forward'), cusumTest(bits,'backward'), rankTest(bits)];
+  }
 
   // ===================================================================
   // Stime di min-entropia MCV/Collision con Clopper-Pearson — riusate
@@ -1139,10 +1270,78 @@
   // ===================================================================
   // PIPELINE PRINCIPALE
   // ===================================================================
+  // [NUOVO — feature 6] Quando impostato da "Demo sbilanciata (test)", bypassa
+  // la lettura dei due file reali e usa direttamente questi due buffer
+  // sintetici. Mai impostato se non tramite azione esplicita dell'utente sul
+  // pulsante di demo.
+  let demoOverrideBuffers = null;
+
+  // Genera due "dark frame" sintetici con CSPRNG reale: dark2 è rumore
+  // uniforme a 16 bit; dark1 = dark2 + una piccola differenza scelta con
+  // PARITÀ deliberatamente sbilanciata (p(bit bersaglio)≈0.98), pescata da un
+  // insieme di piccole differenze pari/dispari non nulle (±1..±4) — mai diff=0
+  // (verrebbe scartato dal filtro) e mai vicino agli estremi ±32767/−32768
+  // (verrebbe scartato come saturazione). La differenza dark1−dark2 ricostruita
+  // da questo tool ha quindi un LSB deliberatamente sbilanciato, senza
+  // innescare i filtri di esclusione con il resto del segnale. Stesso principio
+  // già verificato con test reali nel tool "entropy-extractor" (vedi
+  // CHANGELOG.md): forzare il bias su valori che finiscono scartati dai filtri
+  // vanificherebbe la demo.
+  function generateBiasedDemoBuffers(numWords){
+    const buf2 = new ArrayBuffer(numWords*2);
+    const dv2 = new DataView(buf2);
+    {
+      const CHUNK = 32768; // parole per chiamata (65536 byte)
+      const rnd = new Uint16Array(Math.min(numWords, CHUNK));
+      let done = 0;
+      while (done < numWords){
+        const batch = Math.min(rnd.length, numWords - done);
+        crypto.getRandomValues(batch === rnd.length ? rnd : rnd.subarray(0, batch));
+        for (let i = 0; i < batch; i++) dv2.setUint16((done+i)*2, rnd[i], true);
+        done += batch;
+      }
+    }
+    const buf1 = new ArrayBuffer(numWords*2);
+    const dv1 = new DataView(buf1);
+    const threshold = Math.floor(0.98 * 4294967296); // p(parità bersaglio, dispari)≈0.98
+    const oddCandidates = [1,-1,3,-3];
+    const evenCandidates = [2,-2,4,-4];
+    const rndBias = new Uint32Array(16384), rndPick = new Uint32Array(16384);
+    let done = 0;
+    while (done < numWords){
+      const batch = Math.min(rndBias.length, numWords - done);
+      crypto.getRandomValues(batch === rndBias.length ? rndBias : rndBias.subarray(0, batch));
+      crypto.getRandomValues(batch === rndPick.length ? rndPick : rndPick.subarray(0, batch));
+      for (let i = 0; i < batch; i++){
+        const idx = done + i;
+        const useOdd = rndBias[i] < threshold;
+        const arr = useOdd ? oddCandidates : evenCandidates;
+        const diff = arr[rndPick[i] % arr.length];
+        const v2 = dv2.getUint16(idx*2, true);
+        const v1 = ((v2 + diff) % 65536 + 65536) % 65536;
+        dv1.setUint16(idx*2, v1, true);
+      }
+      done += batch;
+    }
+    return { buf1, buf2 };
+  }
+  biasedDemoBtn.addEventListener('click', function(){
+    const numWords = 100000; // 200.000 byte per frame, sufficiente per le 4 finestre
+    demoOverrideBuffers = generateBiasedDemoBuffers(numWords);
+    startBtn.disabled = false;
+    startBtn.textContent = 'AVVIA ANALISI DARK FRAME';
+    phaseText.textContent = 'Buffer di DEMO SBILANCIATA generato con CSPRNG reale (' + numWords + ' parole per frame, LSB della differenza con p≈0.98 su una parità) — solo per testare i gate, NON dark frame reali. Premere AVVIA ANALISI DARK FRAME.';
+  });
+
   async function startAnalysis(){
-    if (!confirmUniqueEl.checked){ alert("Devi prima confermare la dichiarazione di unicità/autoproduzione."); return; }
-    const file1 = rawFile1El.files[0], file2 = rawFile2El.files[0];
-    if (!file1 || !file2){ alert("Seleziona entrambi i dark frame."); return; }
+    if (!demoOverrideBuffers){
+      if (!confirmUniqueEl.checked){ alert("Devi prima confermare la dichiarazione di unicità/autoproduzione."); return; }
+    }
+    let file1 = null, file2 = null;
+    if (!demoOverrideBuffers){
+      file1 = rawFile1El.files[0]; file2 = rawFile2El.files[0];
+      if (!file1 || !file2){ alert("Seleziona entrambi i dark frame."); return; }
+    }
 
     startBtn.disabled = true; rawFile1El.disabled = true; rawFile2El.disabled = true;
 
@@ -1151,21 +1350,45 @@
     const skipFilter = skipFilterCheck.checked;
     const rigorous = rigorousModeCheck.checked;
 
-    try {
-      phaseText.textContent = 'Lettura dei due dark frame (verifica dimensione)...';
-      progressBar.value = 2;
-      const managed1 = await readManagedFileBuffer(file1);
-      const managed2 = await readManagedFileBuffer(file2);
-      const buf1 = managed1.buffer, buf2 = managed2.buffer;
+    // [NUOVO — feature 5] Margine di sicurezza LHL selezionabile (ε=2⁻ᵏ, margine=2k).
+    // k=40 resta il comportamento di default preesistente di questo tool. Scendere
+    // sotto k=40 richiede una conferma esplicita, una sola volta per sessione —
+    // salire non la richiede mai (sempre sicuro per costruzione).
+    const epsK = Math.max(1, parseInt(epsSelect.value, 10) || LHL_EPSILON_STANDARD_K);
+    if (epsK < LHL_EPSILON_STANDARD_K && !reducedMarginConfirmed){
+      const ok = confirm(`Hai scelto un margine di sicurezza LHL (ε=2⁻${epsK}) inferiore al valore di default di questo strumento (ε=2⁻${LHL_EPSILON_STANDARD_K}).\n\nAdatto solo a scopo dimostrativo/di test, non per chiavi che contano davvero. Procedere?`);
+      if (!ok){
+        epsSelect.value = String(LHL_EPSILON_STANDARD_K);
+        phaseText.textContent = 'Annullato: margine ridotto non confermato. Ripristinato il default ε=2⁻' + LHL_EPSILON_STANDARD_K + '.';
+        startBtn.disabled = false; rawFile1El.disabled = !confirmUniqueEl.checked; rawFile2El.disabled = !confirmUniqueEl.checked;
+        return;
+      }
+      reducedMarginConfirmed = true;
+    }
+    const lhlSecurityMargin = 2 * epsK;
 
-      const anyTruncated = managed1.truncated || managed2.truncated;
+    try {
+      let buf1, buf2, anyTruncated;
+      if (demoOverrideBuffers){
+        phaseText.textContent = 'Uso del buffer di DEMO SBILANCIATA generato con CSPRNG reale...';
+        buf1 = demoOverrideBuffers.buf1; buf2 = demoOverrideBuffers.buf2;
+        anyTruncated = false;
+      } else {
+        phaseText.textContent = 'Lettura dei due dark frame (verifica dimensione)...';
+        progressBar.value = 2;
+        const managed1 = await readManagedFileBuffer(file1);
+        const managed2 = await readManagedFileBuffer(file2);
+        buf1 = managed1.buffer; buf2 = managed2.buffer;
+        anyTruncated = managed1.truncated || managed2.truncated;
+      }
+
       let offset, length;
       if (anyTruncated){
         offset = 0;
         length = Math.min(buf1.byteLength, buf2.byteLength);
       } else {
-        offset = parseInt(rawOffsetEl.value, 10) || 0;
-        let reqLength = parseInt(rawLengthEl.value, 10) || 0;
+        offset = demoOverrideBuffers ? 0 : (parseInt(rawOffsetEl.value, 10) || 0);
+        let reqLength = demoOverrideBuffers ? 0 : (parseInt(rawLengthEl.value, 10) || 0);
         if (offset < 0 || offset >= buf1.byteLength || offset >= buf2.byteLength){
           throw new Error("Offset non valido per la dimensione di uno dei due file.");
         }
@@ -1175,7 +1398,7 @@
       if (length < 2048){
         throw new Error("Blocco dati comune troppo piccolo dopo offset/lunghezza (min 2048 byte). Controlla i campi.");
       }
-      const littleEndianSource = byteOrderSelect.value !== 'big';
+      const littleEndianSource = demoOverrideBuffers ? true : (byteOrderSelect.value !== 'big');
 
       phaseText.textContent = 'Calcolo differenza dark1 − dark2 (parole a 16 bit)...';
       progressBar.value = 8;
@@ -1242,11 +1465,13 @@
         const preEntropy = combinedHmin(peresRes.bits);
         const preConditioningPoolBits = peresRes.bits.length;
         const totalMinEntropyBits = isFinite(preEntropy.hMin) ? preEntropy.hMin * preConditioningPoolBits : 0;
-        const lhlSafeOutputBits = Math.max(0, Math.floor(totalMinEntropyBits - LHL_SECURITY_MARGIN));
+        const lhlSafeOutputBits = Math.max(0, Math.floor(totalMinEntropyBits - lhlSecurityMargin));
         const ratioPractical = isFinite(preEntropy.hMin) ? preEntropy.hMin * PRACTICAL_SAFETY_FACTOR : 0;
         const ratioFromLHL = preConditioningPoolBits > 0 ? (lhlSafeOutputBits/preConditioningPoolBits) : 0;
         const extractionRatio = Math.max(0, Math.min(ratioPractical, ratioFromLHL, MAX_EXTRACTION_RATIO));
-        const blockOutSize = Math.floor(TOEPLITZ_IN * extractionRatio);
+        // [NUOVO] Tetto di emissione ⌊input/2⌋ per blocco, in aggiunta al rapporto
+        // già calcolato sopra — rete di sicurezza indipendente dal bound LHL.
+        const blockOutSize = Math.min(Math.floor(TOEPLITZ_IN * extractionRatio), EMISSION_CAP_BLOCK_OUT);
 
         const numericScheme = {
           lsbBits: lsbRes.bits.length, peresBits: preConditioningPoolBits,
@@ -1255,7 +1480,7 @@
           hMinTTuple: preEntropy.tTuple, hMinLRS: preEntropy.lrs,
           structuralSampleSize: preEntropy.structuralSampleSize, hMin: preEntropy.hMin,
           totalMinEntropyBits, ratioPractical, ratioFromLHL, extractionRatio,
-          blockIn: TOEPLITZ_IN, blockOut: blockOutSize, lhlSafeOutputBits,
+          blockIn: TOEPLITZ_IN, blockOut: blockOutSize, lhlSafeOutputBits, epsK,
           zeroExcluded: lsbRes.zeroExcluded, clipExcluded: lsbRes.clipExcluded
         };
 
@@ -1361,8 +1586,10 @@
       console.error(err);
       phaseText.textContent = 'Errore durante l\'analisi: ' + err.message;
     } finally {
-      startBtn.disabled = false; rawFile1El.disabled = !confirmUniqueEl.checked; rawFile2El.disabled = !confirmUniqueEl.checked;
+      startBtn.disabled = false;
+      rawFile1El.disabled = !confirmUniqueEl.checked; rawFile2El.disabled = !confirmUniqueEl.checked;
       startBtn.textContent = 'RIAVVIA ANALISI DARK FRAME';
+      demoOverrideBuffers = null; // un solo uso: la successiva pressione userà i file reali, se presenti
     }
   }
 
@@ -1431,7 +1658,7 @@
       '<div class="ns-row ns-highlight"><span>Min-entropia combinata (minimo di MCV/Collision — determina il rapporto Toeplitz)</span><span>' + (isFinite(s.hMin)?s.hMin.toFixed(4):'n/d') + ' bit/bit</span></div>' +
       '<div class="ns-row"><span>Entropia assoluta stimata nel pool</span><span>' + s.totalMinEntropyBits.toFixed(1) + ' bit</span></div>' +
       '<div class="ns-row"><span>Rapporto pratico (H_min×0.85)</span><span>' + (s.ratioPractical*100).toFixed(1) + '%</span></div>' +
-      '<div class="ns-row"><span>Rapporto da bound LHL (ε=2⁻⁴⁰)</span><span>' + (s.ratioFromLHL*100).toFixed(1) + '%</span></div>' +
+      '<div class="ns-row"><span>Rapporto da bound LHL (ε=2⁻' + s.epsK + ')</span><span>' + (s.ratioFromLHL*100).toFixed(1) + '%</span></div>' +
       '<div class="ns-row ns-highlight"><span>Rapporto Toeplitz APPLICATO (il più conservativo)</span><span>' + (s.extractionRatio*100).toFixed(1) + '%</span></div>' +
       '<div class="ns-row"><span>Blocco Toeplitz</span><span>' + s.blockIn + ' bit in → ' + s.blockOut + ' bit out</span></div>' +
       '<div class="ns-row"><span>Blocchi elaborati</span><span>' + result.blocksProcessed + ' / ' + result.totalBlocks + '</span></div>' +
@@ -1485,6 +1712,7 @@
     html += '<div style="margin-top:8px;">';
     result.tests.forEach(t => {
       if (t.insufficient) html += '<div class="test-row"><span>' + t.name + '</span><span class="insufficient">Bit insufficienti</span></div>';
+      else if (t.p2 !== undefined) html += '<div class="test-row"><span>' + t.name + '</span><span class="' + (t.pass?'pass':'fail') + '">p₁=' + t.p.toFixed(4) + ', p₂=' + t.p2.toFixed(4) + ' — ' + (t.pass?'PASS':'FAIL') + '</span></div>';
       else html += '<div class="test-row"><span>' + t.name + '</span><span class="' + (t.pass?'pass':'fail') + '">p=' + t.p.toFixed(4) + ' — ' + (t.pass?'PASS':'FAIL') + '</span></div>';
     });
     html += '</div>';
@@ -1838,6 +2066,20 @@
     ).join('') + '<div style="margin-top:8px;font-weight:bold;" class="'+(allPass?'pass':'fail')+'">'+
       (allPass?'Tutti gli autotest superati.':'ALCUNI AUTOTEST FALLITI — possibile regressione, non fidarsi dei risultati della pipeline.')+'</div>';
   }
+
+  // [NUOVO] Hash di integrità dell'applicazione: SHA-256 del blocco <script>
+  // core, mostrato al caricamento. Vedi SECURITY-NOTES.md.
+  async function computeCoreIntegrityHash(){
+    const scriptEl = document.getElementById('core-script');
+    const sourceText = scriptEl ? scriptEl.textContent : '';
+    const data = new TextEncoder().encode(sourceText);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  computeCoreIntegrityHash().then(function(hex){
+    const el = document.getElementById('coreFingerprint');
+    if (el) el.textContent = hex;
+  });
 
   displaySelfTestResults();
 
