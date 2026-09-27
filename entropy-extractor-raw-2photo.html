@@ -1462,7 +1462,7 @@
           gateFailReason = 'Bit post-Peres insufficienti (' + peresRes.bits.length + ' < ' + MIN_POST_PERES_BITS + ').';
         }
 
-        const preEntropy = combinedHmin(peresRes.bits);
+        const preEntropy = sourceEnt;
         const preConditioningPoolBits = peresRes.bits.length;
         const totalMinEntropyBits = isFinite(preEntropy.hMin) ? preEntropy.hMin * preConditioningPoolBits : 0;
         const lhlSafeOutputBits = Math.max(0, Math.floor(totalMinEntropyBits - lhlSecurityMargin));
