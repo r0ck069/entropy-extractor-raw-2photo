@@ -1,6 +1,38 @@
 # Changelog
 
 Tutte le date fanno riferimento alla build indicata in cima al file HTML.
+## v4.0.0-beta3 (2026-09-28) — correzioni dall'audit indipendente e aggiornamento dell'etichetta di build
+
+**SHA-256 di `entropy-extractor-raw-2photo.html` di questa build:** `a72412130af6c265aef90240b01fbaae1660d088428ac1dd6880997a82ef5a88` (calcolato con `sha256sum` sul Raspberry Pi il 28/09/2026, dopo l'aggiornamento dell'etichetta di build)
+
+### Correzione — stima dell'entropia dopo Peres invece che prima (2026-09-27)
+
+**Bug.** Lo stesso difetto corretto in `entropy-extractor` (`9023e8e`), mai propagato in questo repository separato. Alla riga 1465 `preEntropy` era calcolata su `peresRes.bits` (dopo Peres) invece che sui bit grezzi. Su sorgenti correlate l'entropia post-Peres appare vicina a 1 bit/bit anche quando è molto più bassa, con sovrastima dei bit di output emettibili in sicurezza (violazione della Leftover Hash Lemma).
+
+**Correzione.** `preEntropy = sourceEnt` (bit grezzi, prima di Peres).
+
+**Verifica.** `raw2photo_check.js`, 200.000 bit sintetici:
+- correlazione 90% (entropia vera 93.799 bit): circa 120.000 bit accreditati prima del fix (+28% oltre il vero), circa 15.000 dopo;
+- correlazione 75% (entropia vera 162.256 bit): circa 170.000 bit prima (+5%), circa 45.000 dopo;
+- rumore perfetto: comportamento prudente sia prima sia dopo (invariato).
+
+I valori esatti variano di poche centinaia di bit da un'esecuzione all'altra, perché i dati di prova sono generati a caso: per questo sono riportati arrotondati.
+
+**Commit:** `d142b2f`
+
+### Correzione — stimatore LRS: lunghezza sbagliata, conteggio sempre 1 (2026-09-27)
+
+**Bug.** Come in `entropy-extractor`: in `lrsHmin()` `W = u+1` invece di `W = u`, con conteggio massimo sempre 1 per costruzione (statistica priva di informazione). Già corretto in `EntropyPipeline` (`56aedff`), non propagato qui.
+
+**Correzione.** `W = u` (riga 1142 di `entropy-extractor-raw-2photo.html`).
+
+**Verifica.** `lrs_check.js` (aggiunto al repository): prima del fix conteggio sempre 1; dopo il fix valori calcolati dai dati (circa 0,40-0,47 bit/bit su rumore casuale, a seconda della lunghezza del campione).
+
+**Commit:** `3952f86`
+
+### Aggiornamento dell'etichetta di build (2026-09-28)
+
+**Modifica.** La riga di intestazione della pagina diceva "Build 4.0.0-beta2 — BETA non ancora pubblicata su GitHub". La beta è pubblicata su GitHub dal 14/09/2026, e la pagina include ora le due correzioni sopra: l'etichetta è stata portata a "Build 4.0.0-beta3 — BETA". Nessun'altra riga della pagina è cambiata.
 
 ## v4.0.0-beta2 (2026-09-13) — BETA, non ancora pubblicata su GitHub
 
