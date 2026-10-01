@@ -14,10 +14,26 @@ esplicitamente, resta sempre etichettata come "sintetica" nell'output.
 
 ## Principio 2 — Tetto di emissione indipendente dal bound principale
 
-Dalla v4.0.0-beta1, ogni blocco Toeplitz applica un tetto aggiuntivo — **mai più
-di ⌊TOEPLITZ_IN/2⌋ = 256 bit per blocco** — indipendente dal bound LHL già
-calcolato dinamicamente sulla min-entropia misurata. Rete di sicurezza a basso
-costo, non un sostituto del bound principale.
+L'uscita per blocco Toeplitz è il minimo di quattro limiti: (a) il **fattore pratico**
+0,85·h, con h stima prudente di min-entropia per bit sui bit grezzi; (b) il **bound del lemma
+dell'hash residuo per blocco**, m ≤ TOEPLITZ_IN·h − 2·(k + log₂B), dove ε=2⁻ᵏ è l'errore
+totale ammesso sull'uscita della finestra e B il numero di blocchi Toeplitz (ogni blocco ha
+ε/B: gli errori dei blocchi si sommano); (c) il **massimo** 0,90·TOEPLITZ_IN; (d) il **tetto di
+emissione** ⌊TOEPLITZ_IN/2⌋ = 256 bit per blocco, introdotto dalla v4.0.0-beta1. Il tetto è
+aritmeticamente separato dagli altri: non sostituisce il bound LHL, gli affianca una rete di
+sicurezza a basso costo, indipendente dalla stessa formula, utile in caso di un eventuale bug
+futuro nel calcolo del bound principale.
+
+Il bound per blocco (corretto nella v4.0.0-beta4: prima il margine 2k era sottratto una sola
+volta dal totale della finestra) vale sotto ipotesi che il tool non verifica: ogni blocco ha
+min-entropia almeno TOEPLITZ_IN·h anche condizionata ai blocchi precedenti (sorgente circa
+stazionaria); ai bit in ingresso al Toeplitz (uscita di Peres) si attribuisce la stessa
+min-entropia per bit h stimata sui bit grezzi, senza accreditare l'aumento dovuto alla
+compressione di Peres (ipotesi prudente, non dimostrata per sorgenti non i.i.d.); il seme è
+pseudocasuale (espansione SHA-256), quindi la garanzia è computazionale e non teorica
+dell'informazione; la confidenza al 99% dello stimatore aggiunge circa 0,01 alla probabilità di
+errore, non inclusa in ε. Il lemma è una condizione sufficiente: non rispettarlo non significa
+che l'uscita sia distinguibile dal casuale, ma che la garanzia dichiarata non vale.
 
 ## Principio 3 — Il file RAW sorgente è l'unico segreto che conta
 
@@ -65,4 +81,5 @@ combinazione multi-sorgente basata su hash) — vedi la stessa nota in
 I principi 1, 3 e 5 derivano da bug/lezioni già verificati nella storia del
 progetto (vedi CHANGELOG.md). I principi 2, 4, 6 e 7 sono **nuovi/resi espliciti
 con la v4.0.0-beta1/beta2** e non sono ancora stati sottoposti allo stesso
-livello di verifica indipendente degli altri.
+livello di verifica indipendente degli altri. Il Principio 2 è stato corretto nella
+v4.0.0-beta4 (bound LHL per blocco).

@@ -1,6 +1,6 @@
 # Entropy Extractor — RAW 2-Photo (Dark Frame)
 
-> ⚠ **v4.0.0-beta2 — BETA pubblicata su GitHub.** Contiene funzionalità
+> ⚠ **v4.0.0-beta4 — BETA pubblicata su GitHub.** Contiene funzionalità
 > nuove non ancora sottoposte ad audit indipendente da terzi (sono però state
 > verificate con una suite di test rigorosa e reale — vedi `CHANGELOG.md`). Vedi
 > `SECURITY-NOTES.md` per i principi di design.
@@ -33,7 +33,8 @@ blocco dati del sensore. Se fallisce, imposta manualmente offset/lunghezza/ordin
 byte.
 5. Imposta un seed (pubblico), i bit di output desiderati per finestra, e il
 **margine di sicurezza LHL** (ε=2⁻ᵏ, default k=40 — scendere sotto richiede
-conferma esplicita).
+conferma esplicita; ε è l'errore totale ammesso sull'uscita della finestra, ripartito tra i
+blocchi Toeplitz come ε/B, vedi `SECURITY-NOTES.md`, Principio 2).
 6. Premi "AVVIA ANALISI DARK FRAME".
 7. Leggi il pannello **"Confronto fra le finestre e criterio di scelta"** per
 capire quale finestra è stata scelta come migliore e perché.
@@ -52,15 +53,16 @@ codice core, mostrato al caricamento).
 esatto al 99%, più un gate strutturale dedicato con t-Tuple/LRS e due health test
 retrospettivi (RCT/APT).
 5. **Gate obbligatori** prima di procedere, incluso un tetto di
-emissione ⌊512/2⌋=256 bit per blocco Toeplitz, indipendente dal bound LHL
+emissione ⌊512/2⌋=256 bit per blocco Toeplitz, indipendente dal bound LHL per blocco
 (il cui margine ε è ora selezionabile, vedi sopra).
 6. **Estrazione forte**: matrice di Toeplitz (Leftover Hash Lemma), rapporto
-dimensionato dinamicamente sull'entropia realmente misurata.
+dimensionato dinamicamente, per ogni blocco, sull'entropia realmente misurata.
 7. **Finestre indipendenti**: Inizio / Centro / Fine del blocco dati + Blocco
 intero (escluso per costruzione), con controllo di correlazione incrociata.
-8. **Test statistici**: 9 test della suite NIST SP 800-22 (Frequency, Block
-Frequency, Runs, Longest Run, Serial completo, Approximate Entropy completa,
-Cumulative Sums diretto e inverso, Binary Matrix Rank).
+8. **Test statistici**: 9 test della suite NIST SP 800-22, cioè 8 procedure
+(Frequency, Block Frequency, Runs, Longest Run, Serial completo, Approximate
+Entropy completa, Cumulative Sums diretto e inverso — che contano come una sola
+procedura —, Binary Matrix Rank).
 
 ### Criterio di scelta della finestra "migliore"
 
@@ -98,6 +100,20 @@ Toeplitz hashing; coerenza della Collision Estimate; filtro diff con segno;
 cancellazione del pattern fisso. Più un pannello dedicato con l'hash di
 integrità dell'applicazione (controllo diagnostico, non un autotest pass/fail).
 
+## File del repository
+
+- `entropy-extractor-raw-2photo.html` — l'applicazione completa, build v4.0.0-beta4 (apribile con doppio click, nessuna installazione richiesta).
+- `CHANGELOG.md` — storia delle versioni e delle correzioni, con gli SHA-256 delle build.
+- `AUDIT-NOTES.md` — note di audit (punti 1-12).
+- `SECURITY-NOTES.md` — principi di sicurezza e di design.
+- `lrs_check.js`, `raw2photo_check.js`, `toeplitz_margin_check.js` — test di regressione in Node.js delle tre correzioni successive alla v3 (stimatore LRS, stima dell'entropia prima di Peres, bound LHL per blocco); si lanciano dalla cartella del repository con `node <file>`.
+- `lhl_exact_check.py` — verifica numerica esatta del lemma dell'hash residuo su famiglie Toeplitz piccole (richiede Python 3 e numpy).
+- `LICENSE` — licenza MIT.
+
+## Stato di verifica
+
+Dopo la v3 sono state corrette tre cose, descritte in `CHANGELOG.md` e `AUDIT-NOTES.md` (punti 10-12): la stima dell'entropia calcolata prima di Peres e non dopo (27/09/2026, dall'audit indipendente), la lunghezza di confronto dello stimatore LRS (27/09/2026) e il bound del lemma dell'hash residuo, ora calcolato per ogni blocco Toeplitz con somma sui blocchi (01/10/2026). Le tre correzioni sono verificate con script e non da un audit indipendente; le funzionalità nuove della beta non sono ancora state sottoposte ad audit indipendente. Il bound del lemma vale sotto ipotesi esplicite (vedi `SECURITY-NOTES.md`, Principio 2).
+
 ## Licenza
 
 Vedi [LICENSE](LICENSE).
@@ -122,7 +138,7 @@ poi distrutto.Con il microfono del telefono ed escludendo i filtri in ingresso, 
 genera un audio con tanto materiale difficilmente prevedibile, buono da estrarre. O anche
 il campionamento dal sensore del giroscopio o magnetometro o accelerometro in una strada con
 buche e dossi, può esserci imprevedibilità nei bit estratti — l'assistente CSV/sensore di
-questa build è pensato proprio per questo caso d'uso. L'importante è prendere sorgenti
+EntropyPipeline (non incluso in questo strumento) è pensato proprio per questo caso d'uso. L'importante è prendere sorgenti
 grezze campionate che fra loro non abbiano correlazioni apparenti: il segnale audio di due
 radio FM a batterie sintonizzate fuori frequenza, una foto completamente nera fatta in raw
 tappando l'obiettivo, un giroscopio e il rumore in un bar o una mensa affollata hanno ben

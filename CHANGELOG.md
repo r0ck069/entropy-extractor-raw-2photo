@@ -1,6 +1,35 @@
 # Changelog
 
 Tutte le date fanno riferimento alla build indicata in cima al file HTML.
+## v4.0.0-beta4 (2026-10-01) — bound LHL per blocco Toeplitz e allineamento della documentazione
+
+**SHA-256 di `entropy-extractor-raw-2photo.html` di questa build:** `4180a9b4dc45584b8c6175fa6750483c83f7a7f98d6152d8dde60d8a5a277a8e` (calcolato con `sha256sum`)
+
+### Correzione — bound del Leftover Hash Lemma calcolato sul totale della finestra invece che per blocco (2026-10-01)
+
+**Bug.** Lo stesso difetto corretto in `entropy-extractor` v4.0.0-beta4. Il margine 2k era sottratto una sola volta dalla min-entropia totale della finestra (h·n) e ne usciva un rapporto globale `ratioFromLHL`. Ma il Toeplitz è applicato a B blocchi da 512 bit (`TOEPLITZ_IN`), ciascuno con la propria matrice (chiavi a finestra scorrevole, sovrapposte), e la garanzia del lemma vale per blocco. Dove il rapporto di estrazione era deciso dal fattore pratico 0,85·h e non dal bound, il margine per blocco era molto inferiore ai circa 100 bit richiesti. Il lemma è una condizione sufficiente: questo non dimostra che l'uscita fosse distinguibile dal casuale, ma la garanzia dichiarata non valeva.
+
+**Correzione.** Nuova funzione `lhlSafeBlockOutBits(h, B, k)`: uscita per blocco al massimo 512·h − 2·(k + log₂B), con B = ⌊bit post-Peres / 512⌋; ε=2⁻ᵏ è l'errore totale sulla finestra e ε/B quello di ogni blocco (argomento ibrido, valido anche con chiavi sovrapposte). Applicata nell'unico punto di calcolo di questo strumento; `ratioFromLHL` è ora per blocco e `lhlSafeOutputBits` = B·uscita sicura per blocco. Fattore pratico 0,85, massimo 0,90 e tetto di 256 bit per blocco restano invariati. Le costanti sono le stesse di `entropy-extractor`: valgono gli stessi valori di effetto (con 1 milione di bit grezzi, Peres al 90%, k=40: uscita per blocco h=0,3: 130 → 52; h=0,5: 217 → 154; h=0,6: 256 → 205; da h=0,7 resta 256). Nella prova in browser con dark frame sintetici: coppia a bassa entropia (h=0,125): 54 bit per blocco → 0 bit; coppia con h=0,81: 256 bit per blocco, invariato (tetto).
+
+**Verifica.** (1) `toeplitz_margin_check.js`, che esegue il codice reale della pagina: valori noti, casi limite e proprietà "errore totale garantito ≤ 2⁻ᵏ" su 20.000 combinazioni casuali di h, B e k: esito tutto OK; sul file della beta3 fallisce perché la funzione non esiste. (2) `lhl_exact_check.py`: distanza statistica esatta su famiglie Toeplitz piccole con la stessa indicizzazione del codice: per un blocco sempre ≤ ½·2^(−(t−m)/2) (21 casi, rapporto massimo 0,747); per due blocchi con chiave a finestra scorrevole sempre ≤ 2 volte l'errore di un blocco (15 casi, rapporto massimo 0,493); non è una prova per le dimensioni reali (512 bit). (3) Autotest della pagina 20 su 20 prima e dopo; `lrs_check.js` e `raw2photo_check.js` invariati. (4) Prova in un browser reale (Chromium senza interfaccia, in un ambiente di sviluppo) con due coppie di dark frame sintetici: nessun errore in console, autotest 20/20, analisi completa. Non provato: file RAW veri (DNG, NEF e simili), browser da telefono, aspetto grafico, pulsanti di download e SHAKE256.
+
+**Ipotesi non verificate dal tool.** Ogni blocco ha min-entropia almeno 512·h anche condizionata ai blocchi precedenti; ai bit in ingresso al Toeplitz si attribuisce la min-entropia per bit h stimata sui bit grezzi (senza accreditare la compressione di Peres, non dimostrato per sorgenti non i.i.d.); il seme è pseudocasuale (SHA-256), garanzia computazionale; la confidenza al 99% dello stimatore aggiunge circa 0,01 non inclusi in ε. Dettaglio in `SECURITY-NOTES.md`, Principio 2.
+
+### Etichette di build, conteggio dei test NIST e rimandi (2026-10-01)
+
+**Modifica.** (a) La riga di intestazione della pagina diceva "Build 4.0.0-beta3 — BETA ... Test: 9/15 NIST SP 800-22": ora "Build 4.0.0-beta4 — BETA" e "Test: 8/15 procedure NIST SP 800-22 (9 test)": i test sono 9 (Monobit, Block Frequency, Runs, Longest Run, Serial, Approximate Entropy, Cumulative Sums diretto e inverso, Binary Matrix Rank) ma le procedure sono 8, perché le due Cumulative Sums sono una sola procedura. (b) La seconda riga di testo sotto l'intestazione, che cominciava con "build 2026-09-11 v3" accanto a "Build 4.0.0-beta3", ora comincia con "Nota storica (v3, build 2026-09-11)", per non lasciare due etichette di build. (c) Tre rimandi errati "CHANGELOG punto 9", "CHANGELOG punto 8" (riga di testo sotto l'intestazione) e "CHANGELOG punto 3" (commento nel codice) puntano ora ad `AUDIT-NOTES.md`, dove si trovano i punti 3, 8 e 9. Nessun'altra riga di testo della pagina è cambiata oltre alla correzione sopra. In questa build `W = u` è alla riga 1156 e `preEntropy = sourceEnt` alla riga 1479 (i numeri di riga delle voci precedenti si riferiscono alla build di quella voce).
+
+### Documentazione allineata (2026-10-01)
+
+- **README:** versione e build a v4.0.0-beta4; conteggio dei test NIST (8 procedure in 9 test); descrizione del margine LHL (ε totale, ε/B per blocco, rapporto per blocco); elenco completo dei file e nuova sezione "Stato di verifica"; una sola frase della sezione "Per la raccolta delle sorgenti" corretta con l'assenso dell'autore: "l'assistente CSV/sensore di questa build" → "l'assistente CSV/sensore di EntropyPipeline (non incluso in questo strumento)", perché in questo strumento l'assistente non è stato portato (vedi "Non portate da EntropyPipeline/entropy-extractor", v4.0.0-beta2) e la pagina non lo contiene; il resto della sezione non è stato modificato (da rivedere a parte).
+- **AUDIT-NOTES:** nuovi punti 10, 11 e 12 (le tre correzioni dopo la v3); nota sul punto 9 (verifiche e soglie su LRS anteriori alla correzione); tolta la dicitura "prima di un rilascio pubblico" (il repository è pubblico come BETA dal 14/09/2026).
+- **SECURITY-NOTES:** Principio 2 riscritto (i quattro limiti dell'uscita per blocco e le ipotesi del bound); stato di audit aggiornato.
+- **CHANGELOG:** note storiche sulle voci beta1 e beta2 ("non ancora pubblicata" riferito alla data della voce), sul conteggio delle procedure della beta2 e sulla descrizione del margine LHL della beta2.
+
+### File aggiunti
+
+`toeplitz_margin_check.js` e `lhl_exact_check.py` (vedi sopra).
+
 ## v4.0.0-beta3 (2026-09-28) — correzioni dall'audit indipendente e aggiornamento dell'etichetta di build
 
 **SHA-256 di `entropy-extractor-raw-2photo.html` di questa build:** `a72412130af6c265aef90240b01fbaae1660d088428ac1dd6880997a82ef5a88` (calcolato con `sha256sum` sul Raspberry Pi il 28/09/2026, dopo l'aggiornamento dell'etichetta di build)
@@ -36,11 +65,15 @@ I valori esatti variano di poche centinaia di bit da un'esecuzione all'altra, pe
 
 ## v4.0.0-beta2 (2026-09-13) — BETA, non ancora pubblicata su GitHub
 
+> *Nota storica (2026-10-01): lo stato "non ancora pubblicata" e il giudizio "da verificare e auditare prima del rilascio pubblico" si riferiscono al 2026-09-13; il repository è pubblico come BETA dal 14/09/2026 (vedi voce v4.0.0-beta3).*
+
 **Stato: da verificare e auditare prima del rilascio pubblico.** SHA-256 del file
 `entropy-extractor-raw-2photo.html` di questa build:
 `10f3cbb86ad5269931ab53c6412df226aac32a02df1e8ed54ce3a7b04cb93ffe`.
 
 ### Batteria NIST SP 800-22 estesa da 4 a 9 procedure
+
+> *Nota (2026-10-01): le procedure sono 8 (4 già presenti più 4 nuove; Cumulative Sums diretto e inverso sono una sola procedura), eseguite in 9 test.*
 
 Stessi 4 test aggiunti in `entropy-extractor` v4.0.0-beta2 (stesso nucleo
 condiviso): Serial completo (∇ψ²/∇²ψ², estensione ciclica), Approximate Entropy
@@ -53,6 +86,8 @@ dal teorico per tutti e 4 i test, autotest interno (21 controlli) rieseguito
 senza regressioni.
 
 ### Margine di sicurezza LHL selezionabile (ε=2⁻ᵏ)
+
+> *Nota (2026-10-01): dalla v4.0.0-beta4 ε è l'errore totale sull'uscita della finestra e il bound `ratioFromLHL` è calcolato per blocco Toeplitz (uscita per blocco ≤ 512·h − 2·(k + log₂B)); la descrizione che segue è quella della beta2.*
 
 Stessa funzionalità di `entropy-extractor`: prima fisso a ε=2⁻⁴⁰, ora
 selezionabile (2⁻¹⁶/2⁻²⁰/2⁻⁴⁰/2⁻⁶⁴/2⁻⁸⁰), k=40 default invariato, conferma
@@ -101,6 +136,8 @@ coppia di file, nessuna combinazione multi-sorgente).
 ---
 
 ## v4.0.0-beta1 (2026-09-13) — BETA, non ancora pubblicata su GitHub
+
+> *Nota storica (2026-10-01): lo stato "non ancora pubblicata" e il giudizio "da verificare e auditare prima del rilascio pubblico" si riferiscono al 2026-09-13; il repository è pubblico come BETA dal 14/09/2026 (vedi voce v4.0.0-beta3).*
 
 **Stato: da verificare e auditare prima del rilascio pubblico.** SHA-256 del file
 `entropy-extractor-raw-2photo.html` di questa build:
